@@ -1,0 +1,5 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+node scripts/precommit-check.mjs
+node node_modules/lint-staged/bin/lint-staged.js
