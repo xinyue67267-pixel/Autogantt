@@ -343,12 +343,16 @@ select {
   background: #fff1f2;
 }
 
-/* 范式页左侧面板：flex 列布局，操作按钮固定底部 */
+/* 范式页左侧面板：sticky 固定，高度受视口限制，内部独立滚动 */
 .paradigm-left {
   display: flex;
   flex-direction: column;
   gap: 0;
-  height: 100%;
+  /* sticky 使左侧始终贴在 header 下方，不随右侧内容上下移动 */
+  position: sticky;
+  top: calc(56px + 16px); /* header 56px + page-container 上内边距 16px */
+  /* 最大高度 = 视口 - header - 上下 padding */
+  max-height: calc(100vh - 56px - 32px);
   overflow: hidden;
 }
 
