@@ -100,6 +100,7 @@ export const DEFAULT_APP_STATE: AppState = {
     { id: 'slib-test', stageName: '测试验证', stageCategory: '测试', deprecated: false },
     { id: 'slib-release', stageName: '上线发布', stageCategory: '发布', deprecated: false },
   ],
+  scheduleOverrides: [],
   storageMode: 'local',
   userSession: {
     email: '',

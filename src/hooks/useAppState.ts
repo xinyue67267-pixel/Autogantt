@@ -13,6 +13,7 @@ import type {
   ParadigmTemplate,
   Pipeline,
   Requirement,
+  RequirementSchedule,
   StageLibraryItem,
   StorageMode,
   UserSession,
@@ -287,6 +288,39 @@ export function useAppState() {
           const toAdd = values.filter((item) => !existingNames.has(item.stageName))
           if (toAdd.length === 0) return prev
           return { ...prev, stageLibrary: [...prev.stageLibrary, ...toAdd] }
+        })
+      },
+      /**
+       * 新增或更新单条手动排期覆盖（按 requirementId 匹配）。
+       *
+       * @param {RequirementSchedule} value 排期数据
+       * @returns {void}
+       */
+      upsertScheduleOverride: (value: RequirementSchedule): void => {
+        commit((prev) => {
+          const list = [...(prev.scheduleOverrides ?? [])]
+          const index = list.findIndex((item) => item.requirementId === value.requirementId)
+          if (index >= 0) {
+            list[index] = value
+          } else {
+            list.push(value)
+          }
+          return { ...prev, scheduleOverrides: list }
+        })
+      },
+      /**
+       * 批量导入手动排期覆盖（按 requirementId 合并，已存在则覆盖）。
+       *
+       * @param {RequirementSchedule[]} values 排期列表
+       * @returns {void}
+       */
+      importScheduleOverrides: (values: RequirementSchedule[]): void => {
+        commit((prev) => {
+          const map = new Map((prev.scheduleOverrides ?? []).map((s) => [s.requirementId, s]))
+          for (const v of values) {
+            map.set(v.requirementId, v)
+          }
+          return { ...prev, scheduleOverrides: Array.from(map.values()) }
         })
       },
     }),

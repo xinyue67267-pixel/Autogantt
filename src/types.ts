@@ -120,6 +120,8 @@ export interface AppState {
   requirements: Requirement[]
   /** 环节库：全局预定义环节名称集合 */
   stageLibrary: StageLibraryItem[]
+  /** 手动覆盖排期（导入/拖拽后持久化），优先级高于范式自动计算结果 */
+  scheduleOverrides: RequirementSchedule[]
   storageMode: StorageMode
   userSession: UserSession
 }

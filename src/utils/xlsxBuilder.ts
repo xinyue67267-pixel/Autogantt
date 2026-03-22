@@ -6,6 +6,8 @@
  * 本模块使用手动拼接 OOXML XML + 无压缩 ZIP 打包方式，
  * 生成支持列下拉验证的 .xlsx 文件。
  *
+ * 同时提供 buildGanttXlsxBlob，用于生成带单元格背景色的甘特矩阵 xlsx 文件。
+ *
  * 限制：仅支持字符串/数字单元格、单工作表、列级下拉验证，
  * 满足范式模板导出需求。
  */
@@ -264,6 +266,219 @@ export function buildXlsxBlob(rows: CellValue[][], dropdowns: DropdownValidation
   writeU32(ev, 12, cdSize) // CD size
   writeU32(ev, 16, cdStart) // CD offset
   writeU16(ev, 20, 0) // comment length
+
+  const parts = [...locals, ...cds, eocd]
+  const totalSize = parts.reduce((acc, p) => acc + p.length, 0)
+  const result = new Uint8Array(totalSize)
+  let pos = 0
+  for (const part of parts) {
+    result.set(part, pos)
+    pos += part.length
+  }
+
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+}
+
+/**
+ * 单元格描述（用于甘特矩阵导出）。
+ *
+ * @property {string} text 单元格文字（空字符串代表无文字）
+ * @property {string | null} bgColor 背景色（CSS hex，如 "#C4B5FD"；null 代表无填充）
+ */
+export interface GanttCell {
+  text: string
+  bgColor: string | null
+}
+
+/**
+ * 将 CSS hex 颜色（如 "#C4B5FD"）转换为 OOXML ARGB 格式（如 "FFC4B5FD"）。
+ *
+ * @param {string} cssHex CSS hex 颜色字符串
+ * @returns {string} ARGB 格式字符串
+ */
+function toArgb(cssHex: string): string {
+  const hex = cssHex.replace('#', '')
+  // 补全 3 位简写
+  const full =
+    hex.length === 3
+      ? hex
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : hex
+  return `FF${full.toUpperCase()}`
+}
+
+/**
+ * 构建 styles.xml，收集所有用到的背景色，生成对应 xf 样式索引。
+ *
+ * @param {string[]} uniqueColors 去重后的 CSS hex 颜色列表（不含 null）
+ * @returns {{ xml: string; colorIndexMap: Map<string, number> }}
+ *   xml: styles.xml 内容；colorIndexMap: cssHex → xf 索引（0 为默认无填充样式）
+ */
+function buildStylesXml(uniqueColors: string[]): {
+  xml: string
+  colorIndexMap: Map<string, number>
+} {
+  // xf 0 = 默认样式（无填充），xf 1..N = 各颜色
+  const colorIndexMap = new Map<string, number>()
+  uniqueColors.forEach((color, i) => {
+    colorIndexMap.set(color, i + 1)
+  })
+
+  // fills: fill 0 = none（规范要求）, fill 1 = gray125（规范要求）, fill 2..N+1 = 自定义颜色
+  const fillsXml = [
+    `<fill><patternFill patternType="none"/></fill>`,
+    `<fill><patternFill patternType="gray125"/></fill>`,
+    ...uniqueColors.map(
+      (color) =>
+        `<fill><patternFill patternType="solid">` +
+        `<fgColor rgb="${toArgb(color)}"/>` +
+        `<bgColor indexed="64"/>` +
+        `</patternFill></fill>`,
+    ),
+  ].join('')
+
+  // fonts: 至少一个默认 font（规范要求）
+  const fontsXml = `<font><sz val="11"/><name val="Calibri"/></font>`
+
+  // borders: 至少一个空 border（规范要求）
+  const bordersXml = `<border><left/><right/><top/><bottom/><diagonal/></border>`
+
+  // cellStyleXfs: 至少一个默认 xf（规范要求）
+  const cellStyleXfsXml = `<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>`
+
+  // cellXfs: xf 0 = 无填充, xf 1..N = 各颜色填充（fillId = 2 + colorIndex）
+  const cellXfsXml = [
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`,
+    ...uniqueColors.map(
+      (_, i) =>
+        `<xf numFmtId="0" fontId="0" fillId="${i + 2}" borderId="0" xfId="0" applyFill="1"/>`,
+    ),
+  ].join('')
+
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<fonts count="1">${fontsXml}</fonts>` +
+    `<fills count="${uniqueColors.length + 2}">${fillsXml}</fills>` +
+    `<borders count="1">${bordersXml}</borders>` +
+    `<cellStyleXfs count="1">${cellStyleXfsXml}</cellStyleXfs>` +
+    `<cellXfs count="${uniqueColors.length + 1}">${cellXfsXml}</cellXfs>` +
+    `</styleSheet>`
+
+  return { xml, colorIndexMap }
+}
+
+/**
+ * 构建带背景色的甘特矩阵 sheet1.xml。
+ *
+ * @param {GanttCell[][]} rows 行列数据
+ * @param {Map<string, number>} colorIndexMap cssHex → xf 样式索引
+ * @returns {string} sheet1.xml 内容
+ */
+function buildGanttSheetXml(rows: GanttCell[][], colorIndexMap: Map<string, number>): string {
+  const sheetDataRows = rows
+    .map((row, rIdx) => {
+      const cells = row
+        .map((cell, cIdx) => {
+          const addr = `${colLetter(cIdx)}${rIdx + 1}`
+          const styleIdx = cell.bgColor ? (colorIndexMap.get(cell.bgColor) ?? 0) : 0
+          const sAttr = styleIdx > 0 ? ` s="${styleIdx}"` : ''
+          if (!cell.text) {
+            // 无文字但有背景色时仍需输出空单元格以应用样式
+            return styleIdx > 0 ? `<c r="${addr}"${sAttr}/>` : ''
+          }
+          return `<c r="${addr}" t="inlineStr"${sAttr}><is><t>${escXml(cell.text)}</t></is></c>`
+        })
+        .join('')
+      return `<row r="${rIdx + 1}">${cells}</row>`
+    })
+    .join('')
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<sheetData>${sheetDataRows}</sheetData>` +
+    `</worksheet>`
+  )
+}
+
+/**
+ * 生成带单元格背景色的甘特矩阵 xlsx 文件 Blob。
+ *
+ * @param {GanttCell[][]} rows 行列数据（第一行为表头，第一列为层级名称）
+ * @param {string} sheetName 工作表名称
+ * @returns {Blob} xlsx 文件 Blob
+ */
+export function buildGanttXlsxBlob(rows: GanttCell[][], sheetName: string): Blob {
+  // 收集所有唯一背景色
+  const colorSet = new Set<string>()
+  for (const row of rows) {
+    for (const cell of row) {
+      if (cell.bgColor) colorSet.add(cell.bgColor)
+    }
+  }
+  const uniqueColors = Array.from(colorSet)
+
+  const { xml: stylesXml, colorIndexMap } = buildStylesXml(uniqueColors)
+  const sheetXml = buildGanttSheetXml(rows, colorIndexMap)
+
+  const CONTENT_TYPES_WITH_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`
+
+  const WORKBOOK_RELS_WITH_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+
+  const workbookXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<sheets><sheet name="${escXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets>` +
+    `</workbook>`
+
+  const entries: Array<{ name: string; data: Uint8Array }> = [
+    { name: '[Content_Types].xml', data: encode(CONTENT_TYPES_WITH_STYLES) },
+    { name: '_rels/.rels', data: encode(RELS_XML) },
+    { name: 'xl/workbook.xml', data: encode(workbookXml) },
+    { name: 'xl/_rels/workbook.xml.rels', data: encode(WORKBOOK_RELS_WITH_STYLES) },
+    { name: 'xl/worksheets/sheet1.xml', data: encode(sheetXml) },
+    { name: 'xl/styles.xml', data: encode(stylesXml) },
+  ]
+
+  const locals: Uint8Array[] = []
+  const cds: Uint8Array[] = []
+  let localOffset = 0
+
+  for (const entry of entries) {
+    const { local, cd } = buildZipEntry(entry.name, entry.data, localOffset)
+    locals.push(local)
+    cds.push(cd)
+    localOffset += local.length
+  }
+
+  const cdStart = localOffset
+  const cdSize = cds.reduce((acc, cd) => acc + cd.length, 0)
+  const eocd = new Uint8Array(22)
+  const ev = new DataView(eocd.buffer)
+  writeU32(ev, 0, 0x06054b50)
+  writeU16(ev, 4, 0)
+  writeU16(ev, 6, 0)
+  writeU16(ev, 8, entries.length)
+  writeU16(ev, 10, entries.length)
+  writeU32(ev, 12, cdSize)
+  writeU32(ev, 16, cdStart)
+  writeU16(ev, 20, 0)
 
   const parts = [...locals, ...cds, eocd]
   const totalSize = parts.reduce((acc, p) => acc + p.length, 0)

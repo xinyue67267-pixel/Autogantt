@@ -4,12 +4,14 @@
  * @description
  * - 展示项目需求甘特时间轴
  * - 支持视图切换、筛选、拖拽平移与边缘缩放
- * - 支持周视图导出Excel
+ * - 支持甘特矩阵格式导出Excel（带颜色填充，受筛选影响）
+ * - 支持从Excel导入甘特排期（固定列格式 / 矩阵格式）
  * - 日视图周末格标灰，Header与Body网格线严格对齐
  * - 依赖连线渲染（SVG虚线+箭头）
  * - 拖拽结束后进行依赖校验，确认后保存
  */
 import {
+  ChangeEvent,
   MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
@@ -20,6 +22,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
 import type {
+  MilestoneLevel,
   RequirementSchedule,
   ScheduleBarDragPayload,
   StageInstance,
@@ -27,6 +30,9 @@ import type {
 } from '../types'
 import { formatMonthDay, formatYear, formatYearMonth, isWorkingDay, toISODate } from '../utils/date'
 import { applyScheduleDrag, generateSchedules } from '../utils/schedule'
+import { buildGanttXlsxBlob } from '../utils/xlsxBuilder'
+import type { GanttCell } from '../utils/xlsxBuilder'
+import { createId } from '../utils/id'
 
 /** 每行高度（px），与 CSS .timeline-row min-height 保持一致 */
 const ROW_HEIGHT = 42
@@ -160,7 +166,13 @@ function checkDependencyConflicts(
  * @returns {JSX.Element} 时间轴页面
  */
 export function TimelinePage(): JSX.Element {
-  const { state } = useAppStateContext()
+  const {
+    state,
+    upsertPipeline,
+    importRequirements,
+    importStageLibraryItems,
+    importScheduleOverrides,
+  } = useAppStateContext()
   const [viewMode, setViewMode] = useState<TimelineViewMode>('week')
   const [year, setYear] = useState(new Date().getFullYear())
   const [selectedStageName, setSelectedStageName] = useState('全部环节')
@@ -180,6 +192,8 @@ export function TimelinePage(): JSX.Element {
     stageName: string
     startDate: string
     endDate: string
+    /** true 时为拖拽实时 Tooltip（单行文本放在 stageName），false 时为 hover Tooltip（双行） */
+    isDrag: boolean
     x: number
     y: number
   } | null>(null)
@@ -194,16 +208,19 @@ export function TimelinePage(): JSX.Element {
   const scheduleMap = useMemo(() => {
     const map = new Map<string, RequirementSchedule>()
     /**
-     * 循环目的：优先写入自动排期，再用拖拽覆盖结果替换。
+     * 循环目的：优先写入自动排期，再用持久化的手动覆盖替换，最后用本次会话拖拽覆盖结果替换。
      */
     for (const schedule of generatedSchedules) {
       map.set(schedule.requirementId, schedule)
+    }
+    for (const override of state.scheduleOverrides ?? []) {
+      map.set(override.requirementId, override)
     }
     for (const override of overrides) {
       map.set(override.requirementId, override)
     }
     return map
-  }, [generatedSchedules, overrides])
+  }, [generatedSchedules, state.scheduleOverrides, overrides])
 
   const stageNames = useMemo(() => {
     const names = new Set<string>()
@@ -419,24 +436,548 @@ export function TimelinePage(): JSX.Element {
   }, [state.paradigms, scheduleMap, stageYMap, mapDateToX, viewConfig])
 
   /**
-   * 导出周视图 Excel。
+   * 导出甘特矩阵 Excel（当前视图，受筛选影响）。
+   *
+   * 第一行为时间刻度列头，第一列为管线/需求/环节层级，
+   * 环节块以单元格背景色填充。
    *
    * @returns {void}
    */
   const handleExport = (): void => {
-    const header = ['项目/需求', '环节', '开始', '结束']
-    const content = rows
-      .filter((row): row is Extract<DisplayRow, { kind: 'stage' }> => row.kind === 'stage')
-      .map((row) => [
-        row.requirementName,
-        row.stage.stageName,
-        row.stage.startDate,
-        row.stage.endDate,
-      ])
-    const sheet = XLSX.utils.aoa_to_sheet([header, ...content])
-    const book = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(book, sheet, '时间轴周视图')
-    XLSX.writeFile(book, `AutoGantt-${year}-week-view.xlsx`)
+    /**
+     * 循环目的：构建甘特矩阵表格，第一列为层级名称，后续列对应时间刻度。
+     * 环节所在列以对应背景色填充。
+     */
+    const totalCols = headerColumns.length
+    // 表头行：第一列"项目/需求"，后续为时间刻度
+    const headerRow: GanttCell[] = [
+      { text: '项目/需求', bgColor: null },
+      ...headerColumns.map((col) => ({ text: formatHeaderLabel(col.date), bgColor: null })),
+    ]
+    const dataRows: GanttCell[][] = []
+
+    for (const row of rows) {
+      if (row.kind === 'pipeline') {
+        const cells: GanttCell[] = [
+          { text: row.pipelineName, bgColor: null },
+          ...Array.from({ length: totalCols }, () => ({ text: '', bgColor: null })),
+        ]
+        dataRows.push(cells)
+      } else if (row.kind === 'requirement') {
+        const cells: GanttCell[] = [
+          { text: `  ${row.requirementName}`, bgColor: null },
+          ...Array.from({ length: totalCols }, () => ({ text: '', bgColor: null })),
+        ]
+        dataRows.push(cells)
+      } else {
+        // stage 行：计算环节覆盖的列范围并填色
+        const slibColor = state.stageLibrary.find(
+          (item) => !item.deprecated && item.stageName === row.stage.stageName,
+        )?.color
+        const pipelineColor =
+          state.pipelines.find((p) => p.id === row.pipelineId)?.color ?? '#C4B5FD'
+        const barColor = slibColor ?? pipelineColor
+
+        const stageStart = new Date(row.stage.startDate).getTime()
+        const stageEnd = new Date(row.stage.endDate).getTime()
+
+        const cells: GanttCell[] = [{ text: `    ${row.stage.stageName}`, bgColor: null }]
+        for (let i = 0; i < totalCols; i++) {
+          const colDate = headerColumns[i].date
+          const colStart = colDate.getTime()
+          // 该列时间段的结束时间（含当列最后一天）
+          const colEnd = new Date(colDate)
+          colEnd.setDate(colEnd.getDate() + viewConfig.daysPerUnit - 1)
+          const colEndTime = colEnd.getTime()
+          // 环节与该列时间段有重叠则填色
+          const overlap = stageStart <= colEndTime && stageEnd >= colStart
+          cells.push({ text: '', bgColor: overlap ? barColor : null })
+        }
+        dataRows.push(cells)
+      }
+    }
+
+    const allRows = [headerRow, ...dataRows]
+    const blob = buildGanttXlsxBlob(allRows, `${year}年时间轴`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `AutoGantt-${year}-${viewMode}-view.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /** 导入结果面板状态 */
+  const [importResult, setImportResult] = useState<{
+    successCount: number
+    errorRows: { rowIndex: number; reason: string }[]
+    newPipelineCount: number
+    newStageLibCount: number
+  } | null>(null)
+
+  /**
+   * 判断字符串是否为合法 YYYY-MM-DD 日期。
+   *
+   * @param {string} s 待检验字符串
+   * @returns {boolean} 是否合法
+   */
+  const isValidDate = (s: string): boolean => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+    return !isNaN(new Date(s).getTime())
+  }
+
+  /**
+   * 处理 Excel 导入（固定列格式 + 矩阵格式自动识别）。
+   *
+   * @param {ChangeEvent<HTMLInputElement>} e 文件选择事件
+   * @returns {void}
+   */
+  const handleImport = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    // 重置 input，允许同一文件再次上传
+    e.target.value = ''
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const data = new Uint8Array(ev.target?.result as ArrayBuffer)
+      const workbook = XLSX.read(data, { type: 'array', cellStyles: true })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+
+      // 将 sheet 转为 aoa（array of arrays），含 header
+      const aoa: string[][] = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: '',
+      }) as string[][]
+      if (aoa.length < 2) {
+        setImportResult({
+          successCount: 0,
+          errorRows: [{ rowIndex: 1, reason: '文件内容为空' }],
+          newPipelineCount: 0,
+          newStageLibCount: 0,
+        })
+        return
+      }
+
+      const firstRow = aoa[0]
+
+      /**
+       * 格式检测：第一行第二列开始是否均为时间刻度格式（MM-DD / YYYY-MM / YYYY）。
+       * 若匹配则走矩阵格式解析，否则走固定列格式解析。
+       */
+      const TIME_PATTERNS = [
+        /^\d{2}-\d{2}$/, // MM-DD（日/周视图）
+        /^\d{4}-\d{2}$/, // YYYY-MM（月视图）
+        /^\d{4}$/, // YYYY（年视图）
+      ]
+      const isMatrix =
+        String(firstRow[0]).trim() === '项目/需求' &&
+        firstRow.slice(1).some((h) => TIME_PATTERNS.some((p) => p.test(String(h).trim())))
+
+      if (isMatrix) {
+        parseMatrixFormat(aoa, sheet, workbook)
+      } else {
+        parseFixedColumnFormat(aoa)
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  /**
+   * 固定列格式解析（A=管线/B=需求/C=环节/D=开始/E=结束/F=级别/G=里程碑）。
+   *
+   * @param {string[][]} aoa sheet 数据（包含表头行）
+   * @returns {void}
+   */
+  const parseFixedColumnFormat = (aoa: string[][]): void => {
+    const dataRows = aoa.slice(1)
+    const existingPipelineNames = new Set(state.pipelines.map((p) => p.name))
+    const existingStageNames = new Set(state.stageLibrary.map((s) => s.stageName))
+
+    // 收集需要新建的管线和环节库条目
+    const newPipelines: Map<string, string> = new Map() // name -> id
+    const newStageLibNames: Set<string> = new Set()
+
+    // 按需求名称分组
+    const reqGroups: Map<
+      string,
+      {
+        pipelineName: string
+        levelId: string
+        stages: {
+          stageName: string
+          startDate: string
+          endDate: string
+          isMilestone: MilestoneLevel | ''
+        }[]
+        rowIndex: number
+      }
+    > = new Map()
+
+    const errorRows: { rowIndex: number; reason: string }[] = []
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i]
+      const rowIndex = i + 2 // 1-based + 表头行
+      const pipelineName = String(row[0] ?? '').trim()
+      const reqName = String(row[1] ?? '').trim()
+      const stageName = String(row[2] ?? '').trim()
+      const startDate = String(row[3] ?? '').trim()
+      const endDate = String(row[4] ?? '').trim()
+      const levelId = String(row[5] ?? '').trim() || 'P2'
+      const milestoneRaw = String(row[6] ?? '').trim()
+      const isMilestone = (
+        ['L0', 'L0.5', 'L1', 'L2'].includes(milestoneRaw) ? milestoneRaw : ''
+      ) as MilestoneLevel | ''
+
+      if (!pipelineName) {
+        errorRows.push({ rowIndex, reason: 'A列管线名称为空，已跳过' })
+        continue
+      }
+      if (!reqName) {
+        errorRows.push({ rowIndex, reason: 'B列需求名称为空，已跳过' })
+        continue
+      }
+      if (!stageName) {
+        errorRows.push({ rowIndex, reason: `C列环节名称为空` })
+        reqGroups.delete(reqName)
+        continue
+      }
+      if (!isValidDate(startDate)) {
+        errorRows.push({ rowIndex, reason: `D列开始日期格式非法，应为 YYYY-MM-DD` })
+        reqGroups.delete(reqName)
+        continue
+      }
+      if (!isValidDate(endDate)) {
+        errorRows.push({ rowIndex, reason: `E列结束日期格式非法，应为 YYYY-MM-DD` })
+        reqGroups.delete(reqName)
+        continue
+      }
+      if (new Date(startDate) > new Date(endDate)) {
+        errorRows.push({ rowIndex, reason: `开始日期晚于结束日期` })
+        reqGroups.delete(reqName)
+        continue
+      }
+
+      // 收集新管线
+      if (!existingPipelineNames.has(pipelineName) && !newPipelines.has(pipelineName)) {
+        newPipelines.set(pipelineName, createId('pipe'))
+      }
+      // 收集新环节库条目
+      if (!existingStageNames.has(stageName)) {
+        newStageLibNames.add(stageName)
+      }
+
+      if (!reqGroups.has(reqName)) {
+        reqGroups.set(reqName, { pipelineName, levelId, stages: [], rowIndex })
+      }
+      reqGroups.get(reqName)!.stages.push({ stageName, startDate, endDate, isMilestone })
+    }
+
+    // 创建新管线
+    for (const [name, id] of newPipelines.entries()) {
+      const COLORS = ['#C4B5FD', '#F9A8D4', '#6EE7B7', '#FCD34D', '#FDA4AF', '#94A3B8']
+      const color = COLORS[(state.pipelines.length + newPipelines.size) % COLORS.length]
+      upsertPipeline({ id, name, color })
+    }
+    // 创建新环节库条目
+    if (newStageLibNames.size > 0) {
+      importStageLibraryItems(
+        Array.from(newStageLibNames).map((stageName) => ({
+          id: createId('slib'),
+          stageName,
+          stageCategory: '',
+          deprecated: false,
+        })),
+      )
+    }
+
+    // 获取完整管线列表（含新建的）
+    const allPipelines = [
+      ...state.pipelines,
+      ...Array.from(newPipelines.entries()).map(([name, id]) => ({ id, name, color: '' })),
+    ]
+    const getPipelineId = (name: string) =>
+      allPipelines.find((p) => p.name === name)?.id ?? createId('pipe')
+
+    // 创建需求和排期覆盖
+    const newRequirements = []
+    const newScheduleOverrides: RequirementSchedule[] = []
+
+    for (const [reqName, group] of reqGroups.entries()) {
+      const reqId = createId('req')
+      const pipelineId = getPipelineId(group.pipelineName)
+      newRequirements.push({
+        id: reqId,
+        requirementName: reqName,
+        levelId: group.levelId,
+        quantity: 1,
+        expectedLaunchDate: group.stages[group.stages.length - 1]?.endDate ?? '',
+        pipelineId,
+        templateId: '',
+        scheduleMode: 'forward_from_start' as const,
+        projectStartDate: group.stages[0]?.startDate ?? '',
+        deleted: false,
+      })
+      newScheduleOverrides.push({
+        requirementId: reqId,
+        stages: group.stages.map((s) => ({
+          stageId: createId('stage'),
+          stageName: s.stageName,
+          stageCategory: '',
+          isMilestone: s.isMilestone,
+          startDate: s.startDate,
+          endDate: s.endDate,
+        })),
+      })
+    }
+
+    if (newRequirements.length > 0) {
+      importRequirements(newRequirements)
+      importScheduleOverrides(newScheduleOverrides)
+    }
+
+    setImportResult({
+      successCount: reqGroups.size,
+      errorRows,
+      newPipelineCount: newPipelines.size,
+      newStageLibCount: newStageLibNames.size,
+    })
+  }
+
+  /**
+   * 甘特矩阵格式解析（本网站导出文件，第一行为时间刻度列头）。
+   *
+   * @param {string[][]} aoa sheet 数据
+   * @param {XLSX.WorkSheet} sheet 工作表对象（用于读取单元格背景色）
+   * @param {XLSX.WorkBook} workbook 工作簿对象
+   * @returns {void}
+   */
+  const parseMatrixFormat = (
+    aoa: string[][],
+    sheet: XLSX.WorkSheet,
+    workbook: XLSX.WorkBook,
+  ): void => {
+    void workbook // 暂不使用，保留接口一致性
+    const headerRow = aoa[0]
+    const dataRows = aoa.slice(1)
+
+    /**
+     * 解析列头为各列时间段的起止日期。
+     * 自动补全当前年份（对 MM-DD 和 YYYY-MM 列头）。
+     */
+    const colRanges: { start: Date; end: Date }[] = headerRow.slice(1).map((h) => {
+      const label = String(h).trim()
+      // YYYY（年视图）
+      if (/^\d{4}$/.test(label)) {
+        const y = parseInt(label)
+        return { start: new Date(`${y}-01-01`), end: new Date(`${y}-12-31`) }
+      }
+      // YYYY-MM（月视图）
+      if (/^\d{4}-\d{2}$/.test(label)) {
+        const [y, m] = label.split('-').map(Number)
+        const start = new Date(y, m - 1, 1)
+        const end = new Date(y, m, 0) // 该月最后一天
+        return { start, end }
+      }
+      // MM-DD（日或周视图）：补全当前年份
+      if (/^\d{2}-\d{2}$/.test(label)) {
+        const colYear = year
+        const start = new Date(`${colYear}-${label}`)
+        // 根据视图粒度判断是日（+0天）还是周（+6天）
+        // 尝试检测：若两列间隔 >= 6天 视为周视图，否则日视图
+        const end = new Date(start)
+        end.setDate(end.getDate() + (viewConfig.daysPerUnit > 1 ? viewConfig.daysPerUnit - 1 : 0))
+        return { start, end }
+      }
+      return { start: new Date(NaN), end: new Date(NaN) }
+    })
+
+    const existingPipelineNames = new Set(state.pipelines.map((p) => p.name))
+    const existingStageNames = new Set(state.stageLibrary.map((s) => s.stageName))
+    const newPipelines: Map<string, string> = new Map()
+    const newStageLibNames: Set<string> = new Set()
+
+    // 当前上下文（管线/需求）
+    let currentPipelineName = ''
+    let currentReqName = ''
+    const currentLevelId = 'P2'
+
+    interface ReqGroup {
+      pipelineName: string
+      levelId: string
+      stages: {
+        stageName: string
+        startDate: string
+        endDate: string
+        isMilestone: MilestoneLevel | ''
+      }[]
+    }
+    const reqGroups: Map<string, ReqGroup> = new Map()
+    const errorRows: { rowIndex: number; reason: string }[] = []
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i]
+      const rowIndex = i + 2
+      const firstCell = String(row[0] ?? '').trimEnd()
+      const trimmed = firstCell.trim()
+      if (!trimmed) continue
+
+      // 判断层级：无缩进=管线，一级缩进=需求，二级缩进=环节
+      const indentMatch = firstCell.match(/^(\s+)/)
+      const indentLen = indentMatch ? indentMatch[1].length : 0
+
+      // 检查该行是否有任何颜色填充（用于辅助判断是否为环节行）
+      const colLetterFn = (idx: number): string => {
+        let result = ''
+        let n = idx + 1
+        while (n > 0) {
+          result = String.fromCharCode(64 + (n % 26 || 26)) + result
+          n = Math.floor((n - 1) / 26)
+        }
+        return result
+      }
+      const hasColor = row.slice(1).some((_, ci) => {
+        const cellAddr = `${colLetterFn(ci + 1)}${rowIndex}`
+        const cell = sheet[cellAddr]
+        return cell?.s?.fgColor?.rgb || cell?.s?.bgColor?.rgb || cell?.s?.patternType === 'solid'
+      })
+
+      if (indentLen === 0 && !hasColor) {
+        // 管线行
+        currentPipelineName = trimmed
+        currentReqName = ''
+        if (!existingPipelineNames.has(trimmed) && !newPipelines.has(trimmed)) {
+          newPipelines.set(trimmed, createId('pipe'))
+        }
+      } else if (indentLen > 0 && indentLen <= 3 && !hasColor) {
+        // 需求行
+        currentReqName = trimmed
+        if (!reqGroups.has(trimmed)) {
+          reqGroups.set(trimmed, {
+            pipelineName: currentPipelineName,
+            levelId: currentLevelId,
+            stages: [],
+          })
+        }
+      } else {
+        // 环节行：找有颜色的列范围
+        const stageName = trimmed
+        if (!stageName) {
+          errorRows.push({ rowIndex, reason: '环节名称为空，已跳过' })
+          continue
+        }
+        if (!currentReqName) {
+          errorRows.push({ rowIndex, reason: `环节"${stageName}"缺少所属需求行，已跳过` })
+          continue
+        }
+
+        if (!existingStageNames.has(stageName)) newStageLibNames.add(stageName)
+
+        // 找首个和最后一个有颜色的列
+        let firstColoredCol = -1
+        let lastColoredCol = -1
+        for (let ci = 0; ci < colRanges.length; ci++) {
+          const cellAddr = `${colLetterFn(ci + 1)}${rowIndex}`
+          const cell = sheet[cellAddr]
+          const hasColorHere =
+            cell?.s?.fgColor?.rgb || cell?.s?.bgColor?.rgb || cell?.s?.patternType === 'solid'
+          if (hasColorHere) {
+            if (firstColoredCol === -1) firstColoredCol = ci
+            lastColoredCol = ci
+          }
+        }
+
+        if (firstColoredCol === -1) {
+          errorRows.push({ rowIndex, reason: `环节"${stageName}"无颜色填充，已跳过` })
+          continue
+        }
+
+        const startDate = toISODate(colRanges[firstColoredCol].start)
+        const endDate = toISODate(colRanges[lastColoredCol].end)
+
+        if (!isValidDate(startDate) || !isValidDate(endDate)) {
+          errorRows.push({ rowIndex, reason: `环节"${stageName}"列头日期无法解析` })
+          continue
+        }
+
+        reqGroups.get(currentReqName)!.stages.push({
+          stageName,
+          startDate,
+          endDate,
+          isMilestone: '',
+        })
+      }
+    }
+
+    // 创建新管线
+    for (const [name, id] of newPipelines.entries()) {
+      const COLORS = ['#C4B5FD', '#F9A8D4', '#6EE7B7', '#FCD34D', '#FDA4AF', '#94A3B8']
+      const color = COLORS[state.pipelines.length % COLORS.length]
+      upsertPipeline({ id, name, color })
+    }
+    if (newStageLibNames.size > 0) {
+      importStageLibraryItems(
+        Array.from(newStageLibNames).map((stageName) => ({
+          id: createId('slib'),
+          stageName,
+          stageCategory: '',
+          deprecated: false,
+        })),
+      )
+    }
+
+    const allPipelines = [
+      ...state.pipelines,
+      ...Array.from(newPipelines.entries()).map(([name, id]) => ({ id, name, color: '' })),
+    ]
+    const getPipelineId = (name: string) =>
+      allPipelines.find((p) => p.name === name)?.id ?? createId('pipe')
+
+    const newRequirements = []
+    const newScheduleOverrides: RequirementSchedule[] = []
+
+    for (const [reqName, group] of reqGroups.entries()) {
+      if (group.stages.length === 0) continue
+      const reqId = createId('req')
+      const pipelineId = getPipelineId(group.pipelineName)
+      newRequirements.push({
+        id: reqId,
+        requirementName: reqName,
+        levelId: group.levelId,
+        quantity: 1,
+        expectedLaunchDate: group.stages[group.stages.length - 1].endDate,
+        pipelineId,
+        templateId: '',
+        scheduleMode: 'forward_from_start' as const,
+        projectStartDate: group.stages[0].startDate,
+        deleted: false,
+      })
+      newScheduleOverrides.push({
+        requirementId: reqId,
+        stages: group.stages.map((s) => ({
+          stageId: createId('stage'),
+          stageName: s.stageName,
+          stageCategory: '',
+          isMilestone: s.isMilestone,
+          startDate: s.startDate,
+          endDate: s.endDate,
+        })),
+      })
+    }
+
+    if (newRequirements.length > 0) {
+      importRequirements(newRequirements)
+      importScheduleOverrides(newScheduleOverrides)
+    }
+
+    setImportResult({
+      successCount: newRequirements.length,
+      errorRows,
+      newPipelineCount: newPipelines.size,
+      newStageLibCount: newStageLibNames.size,
+    })
   }
 
   /**
@@ -505,23 +1046,45 @@ export function TimelinePage(): JSX.Element {
        */
       if (days === 0) return
 
-      setOverrides((prev) => {
-        const base = prev.length > 0 ? prev : Array.from(scheduleMap.values())
-        return applyScheduleDrag(
-          base,
-          {
-            requirementId: dragState.requirementId,
-            stageId: dragState.stageId,
-            action: dragState.action,
-            deltaDays: days,
-          },
-          state.holidays,
-        )
-      })
+      const base = overrides.length > 0 ? overrides : Array.from(scheduleMap.values())
+      const newOverrides = applyScheduleDrag(
+        base,
+        {
+          requirementId: dragState.requirementId,
+          stageId: dragState.stageId,
+          action: dragState.action,
+          deltaDays: days,
+        },
+        state.holidays,
+      )
+      setOverrides(newOverrides)
       setDragState((prev) => (prev ? { ...prev, startX: event.clientX } : prev))
+
+      // 同步更新拖拽实时 Tooltip：从新排期中找到被拖拽环节的最新日期
+      const draggedSchedule = newOverrides.find((s) => s.requirementId === dragState.requirementId)
+      const draggedStage = draggedSchedule?.stages.find((s) => s.stageId === dragState.stageId)
+      if (draggedStage) {
+        let tooltipText = ''
+        if (dragState.action === 'move') {
+          tooltipText = `${draggedStage.startDate} ~ ${draggedStage.endDate}`
+        } else if (dragState.action === 'resize_start') {
+          tooltipText = `开始：${draggedStage.startDate}`
+        } else if (dragState.action === 'resize_end') {
+          tooltipText = `结束：${draggedStage.endDate}`
+        }
+        setTooltip({
+          stageName: tooltipText,
+          startDate: '',
+          endDate: '',
+          isDrag: true,
+          x: event.clientX + 14,
+          y: event.clientY + 14,
+        })
+      }
     },
     [
       dragState,
+      overrides,
       resizing,
       scheduleMap,
       state.holidays,
@@ -535,6 +1098,8 @@ export function TimelinePage(): JSX.Element {
    */
   const handleMouseUp = useCallback((): void => {
     setResizing(false)
+    // 松手时清除拖拽实时 Tooltip
+    setTooltip(null)
 
     if (!dragState) return
 
@@ -665,11 +1230,60 @@ export function TimelinePage(): JSX.Element {
               </option>
             ))}
           </select>
-          <button className="primary-btn" type="button" onClick={handleExport}>
-            导出Excel
+          <button className="ghost-btn" type="button" onClick={handleExport}>
+            ↓ 导出Excel
           </button>
+          <label className="ghost-btn" style={{ cursor: 'pointer' }}>
+            ↑ 导入Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={handleImport}
+            />
+          </label>
         </div>
       </div>
+
+      {/* 导入结果面板 */}
+      {importResult && (
+        <div className="card" style={{ margin: '8px 0', padding: '12px 16px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <strong>导入结果</strong>
+            <button
+              type="button"
+              className="ghost-btn"
+              style={{ padding: '2px 8px', fontSize: 12 }}
+              onClick={() => setImportResult(null)}
+            >
+              关闭
+            </button>
+          </div>
+          <p style={{ margin: '4px 0', color: '#374151' }}>
+            成功导入 <strong>{importResult.successCount}</strong> 条需求
+            {importResult.newPipelineCount > 0 &&
+              `，自动创建 ${importResult.newPipelineCount} 条管线`}
+            {importResult.newStageLibCount > 0 &&
+              `，自动追加 ${importResult.newStageLibCount} 条环节库条目`}
+          </p>
+          {importResult.errorRows.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 16, color: '#ef4444', fontSize: 12 }}>
+              {importResult.errorRows.map((err, idx) => (
+                <li key={idx}>
+                  行{err.rowIndex}：{err.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* 主体看板 */}
       <div className="timeline-board card" ref={boardRef}>
@@ -871,12 +1485,13 @@ export function TimelinePage(): JSX.Element {
                       style={{ left: startX, width: barWidth, background: barColor }}
                       onMouseDown={(e) => handleDragStart(e, row, 'move')}
                       onMouseMove={(e) => {
-                        // 拖拽中不显示 Tooltip
+                        // 拖拽中不显示 hover Tooltip
                         if (dragState) return
                         setTooltip({
                           stageName: row.stage.stageName,
                           startDate: row.stage.startDate,
                           endDate: row.stage.endDate,
+                          isDrag: false,
                           x: e.clientX + 14,
                           y: e.clientY + 14,
                         })
@@ -1003,13 +1618,21 @@ export function TimelinePage(): JSX.Element {
         </div>
       )}
 
-      {/* ── 环节条 Hover Tooltip ── */}
-      {tooltip && !dragState && (
+      {/* ── 环节条 Tooltip（hover 静态 + 拖拽实时） ── */}
+      {tooltip && (
         <div className="bar-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-          <div className="bar-tooltip-name">{tooltip.stageName}</div>
-          <div className="bar-tooltip-date">
-            {tooltip.startDate} ~ {tooltip.endDate}
-          </div>
+          {tooltip.isDrag ? (
+            // 拖拽实时 Tooltip：单行显示变更后日期
+            <div className="bar-tooltip-name">{tooltip.stageName}</div>
+          ) : (
+            // Hover Tooltip：环节名称 + 日期区间双行
+            <>
+              <div className="bar-tooltip-name">{tooltip.stageName}</div>
+              <div className="bar-tooltip-date">
+                {tooltip.startDate} ~ {tooltip.endDate}
+              </div>
+            </>
+          )}
         </div>
       )}
     </section>
