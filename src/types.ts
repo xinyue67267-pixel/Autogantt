@@ -105,6 +105,8 @@ export interface StageLibraryItem {
   stageName: string
   /** 所属类别，与范式固定类别对应；可为空 */
   stageCategory: string
+  /** 自定义颜色，CSS 颜色值（来自主题色板）；可为空，空时时间轴回退到管线颜色 */
+  color?: string
   /** 是否停用（被范式引用时不可硬删除，标记停用） */
   deprecated: boolean
 }

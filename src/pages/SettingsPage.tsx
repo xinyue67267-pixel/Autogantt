@@ -16,20 +16,26 @@ import { createId } from '../utils/id'
 import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
 /**
- * 预设颜色板——供用户快速选择，覆盖常见业务线配色。
+ * 预设颜色板——供用户快速选择，覆盖主题色系全部 16 色。
  * 每个值为 CSS hex 颜色字符串。
  */
 const PRESET_COLORS: string[] = [
-  '#C4B5FD', // 主色 lavender
-  '#F9A8D4', // 粉色
-  '#6EE7B7', // 翠绿
-  '#FCD34D', // 琥珀
-  '#FDA4AF', // 玫瑰
-  '#93C5FD', // 蓝色
-  '#FCA5A5', // 红橙
-  '#86EFAC', // 嫩绿
-  '#FB923C', // 橙色
-  '#A5B4FC', // 靛蓝
+  '#C4B5FD', // 主色 lavender-300
+  '#A78BFA', // violet-400
+  '#7C3AED', // violet-600
+  '#F9A8D4', // pink-300
+  '#F472B6', // pink-400
+  '#6EE7B7', // emerald-300
+  '#34D399', // emerald-400
+  '#FCD34D', // amber-300
+  '#FBBF24', // amber-400
+  '#FDA4AF', // rose-300
+  '#F87171', // red-400
+  '#93C5FD', // blue-300
+  '#94A3B8', // slate-400
+  '#64748B', // slate-500
+  '#6B7280', // gray-500
+  '#9CA3AF', // gray-400
 ]
 
 /**
@@ -174,6 +180,9 @@ export function SettingsPage(): JSX.Element {
   const [editingSlibId, setEditingSlibId] = useState<string | null>(null)
   const [editSlibName, setEditSlibName] = useState('')
   const [editSlibCategory, setEditSlibCategory] = useState('')
+  const [editSlibColor, setEditSlibColor] = useState<string | undefined>(undefined)
+  /** 色板 popover 打开的条目 ID（null 表示关闭） */
+  const [colorPopoverId, setColorPopoverId] = useState<string | null>(null)
 
   /**
    * 新增环节库条目。
@@ -209,6 +218,7 @@ export function SettingsPage(): JSX.Element {
     setEditingSlibId(item.id)
     setEditSlibName(item.stageName)
     setEditSlibCategory(item.stageCategory)
+    setEditSlibColor(item.color)
   }
 
   /**
@@ -221,20 +231,37 @@ export function SettingsPage(): JSX.Element {
     const name = editSlibName.trim()
     /** 条件目的：名称为空时不保存。 */
     if (!name) return
-    upsertStageLibraryItem({ ...item, stageName: name, stageCategory: editSlibCategory.trim() })
+    upsertStageLibraryItem({
+      ...item,
+      stageName: name,
+      stageCategory: editSlibCategory.trim(),
+      color: editSlibColor,
+    })
     setEditingSlibId(null)
   }
 
   /**
-   * 下载环节库导入模板（两列：环节名称、所属类别）。
+   * 直接为某条目设置颜色（色板 popover 选色时调用）。
+   *
+   * @param {StageLibraryItem} item 目标条目
+   * @param {string | undefined} color 新颜色，undefined 表示清除
+   * @returns {void}
+   */
+  const handleSetSlibColor = (item: StageLibraryItem, color: string | undefined): void => {
+    upsertStageLibraryItem({ ...item, color })
+    setColorPopoverId(null)
+  }
+
+  /**
+   * 下载环节库导入模板（三列：环节名称、所属类别、颜色）。
    *
    * @returns {void}
    */
   const handleDownloadSlibTemplate = (): void => {
     const rows = [
-      ['环节名称', '所属类别'],
-      ['需求设计', '设计'],
-      ['开发实现', '开发'],
+      ['环节名称', '所属类别', '颜色（可选，如 #C4B5FD）'],
+      ['需求设计', '设计', '#C4B5FD'],
+      ['开发实现', '开发', '#A78BFA'],
     ]
     const blob = buildXlsxBlob(rows, [])
     const url = URL.createObjectURL(blob)
@@ -247,7 +274,7 @@ export function SettingsPage(): JSX.Element {
 
   /**
    * 批量导入环节库 Excel。
-   * A列=环节名称，B列=所属类别；名称为空跳过，名称已存在跳过。
+   * A列=环节名称，B列=所属类别，C列=颜色；名称为空跳过，名称已存在跳过。
    *
    * @param {ChangeEvent<HTMLInputElement>} event 文件选择事件
    * @returns {void}
@@ -272,7 +299,7 @@ export function SettingsPage(): JSX.Element {
       let skipped = 0
 
       /**
-       * 循环目的：逐行解析环节名称与类别，过滤无效行。
+       * 循环目的：逐行解析环节名称、类别与颜色，过滤无效行。
        */
       for (const row of dataRows) {
         const name = `${row['A'] ?? ''}`.trim()
@@ -282,10 +309,12 @@ export function SettingsPage(): JSX.Element {
           continue
         }
         existingNames.add(name)
+        const rawColor = `${row['C'] ?? ''}`.trim()
         toAdd.push({
           id: createId('slib'),
           stageName: name,
           stageCategory: `${row['B'] ?? ''}`.trim(),
+          color: rawColor || undefined,
           deprecated: false,
         })
       }
@@ -531,13 +560,14 @@ export function SettingsPage(): JSX.Element {
                 <tr>
                   <th>环节名称</th>
                   <th>所属类别</th>
+                  <th>颜色</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {state.stageLibrary.length === 0 && (
                   <tr>
-                    <td colSpan={3} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
+                    <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
                       暂无环节，请点击上方新增或批量导入。
                     </td>
                   </tr>
@@ -560,6 +590,30 @@ export function SettingsPage(): JSX.Element {
                             onChange={(e) => setEditSlibCategory(e.target.value)}
                             style={{ width: '100%' }}
                           />
+                        </td>
+                        <td>
+                          {/* 编辑模式下内联色板 */}
+                          <div className="color-picker-wrap">
+                            {PRESET_COLORS.map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                className={`color-swatch ${editSlibColor === color ? 'color-swatch--active' : ''}`}
+                                style={{ background: color }}
+                                aria-label={`选择颜色 ${color}`}
+                                onClick={() => setEditSlibColor(color)}
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              className={`color-swatch color-swatch--custom ${!editSlibColor ? 'color-swatch--active' : ''}`}
+                              style={{ background: '#e5e7eb' }}
+                              aria-label="清除颜色"
+                              onClick={() => setEditSlibColor(undefined)}
+                            >
+                              ×
+                            </button>
+                          </div>
                         </td>
                         <td>
                           <div className="row-gap">
@@ -588,6 +642,44 @@ export function SettingsPage(): JSX.Element {
                       <td>
                         {item.stageCategory || (
                           <span style={{ color: 'var(--color-muted)' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ position: 'relative' }}>
+                        {/* 色块 + popover */}
+                        <button
+                          type="button"
+                          className="slib-color-swatch"
+                          style={{ background: item.color ?? 'transparent' }}
+                          aria-label={item.color ? `当前颜色 ${item.color}` : '未设置颜色'}
+                          onClick={() =>
+                            setColorPopoverId((prev) => (prev === item.id ? null : item.id))
+                          }
+                        >
+                          {!item.color && <span style={{ color: 'var(--color-muted)' }}>无</span>}
+                        </button>
+                        {colorPopoverId === item.id && (
+                          <div className="slib-color-popover">
+                            <div className="color-picker-wrap">
+                              {PRESET_COLORS.map((color) => (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  className={`color-swatch ${item.color === color ? 'color-swatch--active' : ''}`}
+                                  style={{ background: color }}
+                                  aria-label={`选择颜色 ${color}`}
+                                  onClick={() => handleSetSlibColor(item, color)}
+                                />
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-btn"
+                              style={{ marginTop: 4, width: '100%', fontSize: 12 }}
+                              onClick={() => handleSetSlibColor(item, undefined)}
+                            >
+                              清除
+                            </button>
+                          </div>
                         )}
                       </td>
                       <td>
