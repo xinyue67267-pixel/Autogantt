@@ -517,6 +517,63 @@ select {
 }
 
 /* ════════════════════════════════════
+   设置页面专用样式
+   ════════════════════════════════════ */
+
+/* 设置页整体布局：左侧导航 + 右侧内容 */
+.settings-page {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 16px;
+}
+
+/* 左侧 Tab 导航卡片 */
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 0;
+  position: sticky;
+  top: calc(56px + 16px);
+}
+
+/* 单个 Tab 项 */
+.settings-tab-item {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 4px solid transparent;
+  border-radius: 0;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background 120ms,
+    border-left-color 120ms;
+}
+
+.settings-tab-item:hover {
+  background: var(--color-primary-soft);
+}
+
+.settings-tab-item.active {
+  border-left-color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+  font-weight: 600;
+  color: var(--color-primary-strong);
+}
+
+/* 右侧内容区 */
+.settings-content {
+  min-width: 0;
+}
+
+/* ════════════════════════════════════
    需求页面专用样式
    ════════════════════════════════════ */
 
