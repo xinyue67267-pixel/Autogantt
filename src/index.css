@@ -66,7 +66,6 @@ select {
 }
 
 .main-nav {
-  margin-left: 24px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -112,8 +111,6 @@ select {
 }
 
 .app-body {
-  display: grid;
-  grid-template-columns: 240px 1fr;
   min-height: calc(100vh - 56px);
 }
 
@@ -302,6 +299,114 @@ select {
   background: #fff;
 }
 
+/* ---- isMilestone 复选框字段 ---- */
+.field--checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.field--checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ---- 依赖配置区域 ---- */
+.dep-section {
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.dep-section__header {
+  align-items: center;
+}
+
+.dep-section__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dep-empty {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* 每一行依赖规则 */
+.dep-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px;
+  background: var(--color-bg-soft);
+  border-radius: 8px;
+}
+
+/* 依赖字段标签 */
+.dep-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.dep-field span {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.dep-field select,
+.dep-field input {
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+}
+
+/* value 数值输入框宽度限制 */
+.dep-field--value {
+  min-width: 100px;
+  max-width: 140px;
+}
+
+/* 删除依赖按钮 */
+.dep-remove {
+  align-self: flex-end;
+  padding: 5px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ghost 按钮（添加依赖） */
+.ghost-btn {
+  background: transparent;
+  border: 1px dashed var(--color-primary-strong);
+  color: var(--color-primary-strong);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.ghost-btn:hover {
+  background: var(--color-primary-soft);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -341,11 +446,34 @@ select {
   gap: 10px;
 }
 
+.timeline-page .toolbar select {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fff;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.timeline-page .toolbar select:hover {
+  border-color: var(--color-primary-strong);
+}
+
+.timeline-page .toolbar select:focus {
+  outline: none;
+  border-color: var(--color-primary-strong);
+  box-shadow: 0 0 0 3px rgba(196, 181, 253, 0.35);
+}
+
 .timeline-board {
   display: grid;
   grid-template-columns: auto 6px 1fr;
   overflow: hidden;
   padding: 0;
+  /* 整体高度限制，让右侧可以独立滚动 */
+  max-height: calc(100vh - 180px);
 }
 
 .timeline-left {
@@ -440,14 +568,37 @@ select {
 }
 
 .timeline-canvas-body {
+  /* 纵向网格线：与 header 单元格边界精确对齐 */
   background-image: repeating-linear-gradient(
     to right,
-    #f3f0ff 0,
-    #f3f0ff 1px,
-    transparent 1px,
-    transparent var(--grid-unit)
+    transparent 0,
+    transparent calc(var(--grid-unit) - 1px),
+    #ede9fe calc(var(--grid-unit) - 1px),
+    #ede9fe var(--grid-unit)
   );
   background-size: var(--grid-unit) 100%;
+}
+
+/* 日视图周末列背景 */
+.weekend-col-bg {
+  background: #f5f3f014;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 今日高亮竖线 */
+.today-line {
+  background: #a78bfa;
+  opacity: 0.6;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 1px;
+}
+
+/* 周末列 header 标灰 */
+.timeline-header-cell.weekend-cell {
+  background: #f3f0f8;
+  color: #9ca3af;
 }
 
 .timeline-canvas-header {
@@ -458,6 +609,7 @@ select {
   top: 0;
   background: var(--color-primary-soft);
   z-index: 2;
+  /* 与 body 共享滚动容器，无需单独宽度 */
 }
 
 .timeline-header-cell {
@@ -550,11 +702,86 @@ select {
     display: none;
   }
 
-  .app-body {
-    grid-template-columns: 1fr;
-  }
-
   .app-sidebar {
     display: none;
   }
+}
+
+/* ── 拖拽保存确认弹窗 ── */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 100;
+  display: grid;
+  place-items: center;
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  width: min(480px, 90vw);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  display: grid;
+  gap: 16px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.modal-conflicts {
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff1f2;
+  padding: 12px;
+}
+
+.modal-conflicts-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #9f1239;
+  font-weight: 500;
+}
+
+.modal-conflicts ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.conflict-item {
+  font-size: 13px;
+  color: #be123c;
+  margin-bottom: 4px;
+}
+
+.modal-ok-msg {
+  margin: 0;
+  font-size: 14px;
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* timeline-board 行高固定，防止内容撑开导致对齐偏差 */
+.timeline-left-row {
+  min-height: unset;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.timeline-row {
+  box-sizing: border-box;
 }
