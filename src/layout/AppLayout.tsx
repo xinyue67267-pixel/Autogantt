@@ -3,7 +3,7 @@
  *
  * @description
  * - 固定顶部Header
- * - 左侧Sidebar导航（符合UI设计文档：四页左右布局）
+ * - 全局Header导航（时间轴/开发范式/需求/设置）
  * - 承载四个业务页面与登录状态入口
  */
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
@@ -56,8 +56,25 @@ export function AppLayout(): JSX.Element {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="logo">AutoGantt</div>
+        <nav className="main-nav" aria-label="主导航">
+          <NavLink end to="/" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            时间轴
+          </NavLink>
+          <NavLink to="/paradigm" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            开发范式
+          </NavLink>
+          <NavLink
+            to="/requirements"
+            className={({ isActive }) => (isActive ? 'active' : undefined)}
+          >
+            需求
+          </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            设置
+          </NavLink>
+        </nav>
         <div className="header-right">
+          <div className="logo">AutoGantt</div>
           <span className="sync-tag">{getSyncLabel(state.userSession.syncStatus)}</span>
           {state.userSession.loggedIn ? (
             <div className="session-box">
@@ -76,16 +93,6 @@ export function AppLayout(): JSX.Element {
         </div>
       </header>
       <div className="app-body">
-        <aside className="app-sidebar">
-          <nav className="sidebar-nav">
-            <NavLink to="/">时间轴</NavLink>
-            <NavLink to="/paradigm">开发范式</NavLink>
-            <NavLink to="/requirements">需求</NavLink>
-            <NavLink to="/settings" className="sidebar-settings-link">
-              设置
-            </NavLink>
-          </nav>
-        </aside>
         <main className="page-container">
           <Outlet />
         </main>

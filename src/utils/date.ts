@@ -48,6 +48,17 @@ export function formatYearMonth(input: Date | string): string {
 }
 
 /**
+ * 格式化日期为YYYY。
+ *
+ * @param {Date | string} input 输入日期对象或日期字符串
+ * @returns {string} YYYY格式字符串
+ */
+export function formatYear(input: Date | string): string {
+  const value = typeof input === 'string' ? new Date(input) : input
+  return `${value.getFullYear()}`
+}
+
+/**
  * 复制一个日期对象，避免原对象被修改。
  *
  * @param {Date} value 原始日期
