@@ -580,6 +580,15 @@ select {
   overflow-y: auto;
 }
 
+/* 环节库顶部操作栏：新增输入 + 操作按钮横排 */
+.slib-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
 /* ════════════════════════════════════
    需求页面专用样式
    ════════════════════════════════════ */

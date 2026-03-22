@@ -3,13 +3,17 @@
  *
  * @description
  * - 管理工作日历、需求级别、模板分类
+ * - 管理环节库（环节名称集合，供范式编辑下拉选择）
  * - 管理管线（含颜色选择）
  * - 管理登录状态与存储模式
  */
-import { useState, type JSX } from 'react'
+import { ChangeEvent, useState, type JSX } from 'react'
+import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
-import type { HolidayRange, Pipeline, StorageMode } from '../types'
+import { useToast } from '../context/ToastContext'
+import type { HolidayRange, Pipeline, StageLibraryItem, StorageMode } from '../types'
 import { createId } from '../utils/id'
+import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
 /**
  * 预设颜色板——供用户快速选择，覆盖常见业务线配色。
@@ -45,12 +49,16 @@ export function SettingsPage(): JSX.Element {
     removeHoliday,
     upsertPipeline,
     removePipeline,
+    upsertStageLibraryItem,
+    removeStageLibraryItem,
+    importStageLibraryItems,
   } = useAppStateContext()
+  const toast = useToast()
 
   const [newLevel, setNewLevel] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [activeTab, setActiveTab] = useState<
-    'calendar' | 'levels' | 'categories' | 'pipelines' | 'account'
+    'calendar' | 'levels' | 'categories' | 'stagelibrary' | 'pipelines' | 'account'
   >('calendar')
   const [holidayForm, setHolidayForm] = useState<Omit<HolidayRange, 'id'>>({
     name: '',
@@ -157,10 +165,149 @@ export function SettingsPage(): JSX.Element {
     setEditingPipelineId(null)
   }
 
+  // ── 环节库状态 ──
+  /** 新增环节库条目：名称 */
+  const [newStageName, setNewStageName] = useState('')
+  /** 新增环节库条目：类别 */
+  const [newStageCategory, setNewStageCategory] = useState('')
+  /** 正在编辑的环节库条目 ID */
+  const [editingSlibId, setEditingSlibId] = useState<string | null>(null)
+  const [editSlibName, setEditSlibName] = useState('')
+  const [editSlibCategory, setEditSlibCategory] = useState('')
+
+  /**
+   * 新增环节库条目。
+   *
+   * @returns {void}
+   */
+  const handleAddStageLibraryItem = (): void => {
+    const name = newStageName.trim()
+    /** 条件目的：名称为空时不新增，避免无效条目。 */
+    if (!name) return
+    /** 条件目的：名称已存在时不新增，保持环节名唯一。 */
+    if (state.stageLibrary.some((item) => item.stageName === name)) {
+      toast.warning(`环节「${name}」已存在`)
+      return
+    }
+    upsertStageLibraryItem({
+      id: createId('slib'),
+      stageName: name,
+      stageCategory: newStageCategory.trim(),
+      deprecated: false,
+    })
+    setNewStageName('')
+    setNewStageCategory('')
+  }
+
+  /**
+   * 进入环节库条目编辑模式。
+   *
+   * @param {StageLibraryItem} item 被编辑的条目
+   * @returns {void}
+   */
+  const handleStartEditSlib = (item: StageLibraryItem): void => {
+    setEditingSlibId(item.id)
+    setEditSlibName(item.stageName)
+    setEditSlibCategory(item.stageCategory)
+  }
+
+  /**
+   * 保存环节库条目编辑。
+   *
+   * @param {StageLibraryItem} item 原条目
+   * @returns {void}
+   */
+  const handleSaveSlib = (item: StageLibraryItem): void => {
+    const name = editSlibName.trim()
+    /** 条件目的：名称为空时不保存。 */
+    if (!name) return
+    upsertStageLibraryItem({ ...item, stageName: name, stageCategory: editSlibCategory.trim() })
+    setEditingSlibId(null)
+  }
+
+  /**
+   * 下载环节库导入模板（两列：环节名称、所属类别）。
+   *
+   * @returns {void}
+   */
+  const handleDownloadSlibTemplate = (): void => {
+    const rows = [
+      ['环节名称', '所属类别'],
+      ['需求设计', '设计'],
+      ['开发实现', '开发'],
+    ]
+    const blob = buildXlsxBlob(rows, [])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '环节库导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /**
+   * 批量导入环节库 Excel。
+   * A列=环节名称，B列=所属类别；名称为空跳过，名称已存在跳过。
+   *
+   * @param {ChangeEvent<HTMLInputElement>} event 文件选择事件
+   * @returns {void}
+   */
+  const handleImportSlibExcel = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0]
+    /** 条件目的：未选择文件时直接退出。 */
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const arrayBuffer = e.target?.result
+      if (!arrayBuffer) return
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, {
+        header: 'A',
+        defval: '',
+      })
+      const dataRows = rows.slice(1)
+      const existingNames = new Set(state.stageLibrary.map((item) => item.stageName))
+      const toAdd: StageLibraryItem[] = []
+      let skipped = 0
+
+      /**
+       * 循环目的：逐行解析环节名称与类别，过滤无效行。
+       */
+      for (const row of dataRows) {
+        const name = `${row['A'] ?? ''}`.trim()
+        if (!name) continue
+        if (existingNames.has(name)) {
+          skipped++
+          continue
+        }
+        existingNames.add(name)
+        toAdd.push({
+          id: createId('slib'),
+          stageName: name,
+          stageCategory: `${row['B'] ?? ''}`.trim(),
+          deprecated: false,
+        })
+      }
+
+      if (toAdd.length > 0) {
+        importStageLibraryItems(toAdd)
+        toast.success(
+          `成功导入 ${toAdd.length} 条环节${skipped > 0 ? `，跳过重复 ${skipped} 条` : ''}`,
+        )
+      } else {
+        toast.warning(skipped > 0 ? `所有条目均已存在，跳过 ${skipped} 条` : '未读取到有效环节数据')
+      }
+    }
+    reader.readAsArrayBuffer(file)
+    event.target.value = ''
+  }
+
   const TABS: { key: typeof activeTab; label: string }[] = [
     { key: 'calendar', label: '工作日历' },
     { key: 'levels', label: '需求级别' },
     { key: 'categories', label: '模板分类' },
+    { key: 'stagelibrary', label: '环节库' },
     { key: 'pipelines', label: '管线管理' },
     { key: 'account', label: '账号与同步' },
   ]
@@ -339,6 +486,133 @@ export function SettingsPage(): JSX.Element {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 环节库 */}
+        {activeTab === 'stagelibrary' && (
+          <div className="card">
+            <h2>环节库</h2>
+            {/* 顶部操作栏 */}
+            <div className="slib-toolbar">
+              <div className="inline-form" style={{ flex: 1 }}>
+                <input
+                  value={newStageName}
+                  placeholder="环节名称"
+                  onChange={(e) => setNewStageName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddStageLibraryItem()
+                  }}
+                />
+                <input
+                  value={newStageCategory}
+                  placeholder="所属类别（可选）"
+                  onChange={(e) => setNewStageCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddStageLibraryItem()
+                  }}
+                />
+                <button className="primary-btn" type="button" onClick={handleAddStageLibraryItem}>
+                  + 新增环节
+                </button>
+              </div>
+              <button className="ghost-btn" type="button" onClick={handleDownloadSlibTemplate}>
+                ↓ 下载导入模板
+              </button>
+              <label className="file-btn">
+                ↑ 批量导入Excel
+                <input type="file" accept=".xlsx,.xls" onChange={handleImportSlibExcel} />
+              </label>
+            </div>
+
+            {/* 环节库表格 */}
+            <table className="data-table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>环节名称</th>
+                  <th>所属类别</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.stageLibrary.length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
+                      暂无环节，请点击上方新增或批量导入。
+                    </td>
+                  </tr>
+                )}
+                {state.stageLibrary.map((item) => {
+                  if (editingSlibId === item.id) {
+                    return (
+                      <tr key={item.id}>
+                        <td>
+                          <input
+                            value={editSlibName}
+                            onChange={(e) => setEditSlibName(e.target.value)}
+                            autoFocus
+                            style={{ width: '100%' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={editSlibCategory}
+                            onChange={(e) => setEditSlibCategory(e.target.value)}
+                            style={{ width: '100%' }}
+                          />
+                        </td>
+                        <td>
+                          <div className="row-gap">
+                            <button
+                              className="primary-btn"
+                              type="button"
+                              onClick={() => handleSaveSlib(item)}
+                            >
+                              保存
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              type="button"
+                              onClick={() => setEditingSlibId(null)}
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
+                  return (
+                    <tr key={item.id}>
+                      <td>{item.stageName}</td>
+                      <td>
+                        {item.stageCategory || (
+                          <span style={{ color: 'var(--color-muted)' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-gap">
+                          <button
+                            className="ghost-btn"
+                            type="button"
+                            onClick={() => handleStartEditSlib(item)}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            className="danger-btn"
+                            type="button"
+                            onClick={() => removeStageLibraryItem(item.id)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 

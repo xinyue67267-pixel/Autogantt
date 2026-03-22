@@ -97,6 +97,18 @@ export interface UserSession {
   syncStatus: 'synced' | 'syncing' | 'offline_pending' | 'conflict'
 }
 
+/** 环节库条目——全局预定义环节名称集合，供范式编辑时下拉选择 */
+export interface StageLibraryItem {
+  /** 唯一标识 */
+  id: string
+  /** 环节名称，全局唯一 */
+  stageName: string
+  /** 所属类别，与范式固定类别对应；可为空 */
+  stageCategory: string
+  /** 是否停用（被范式引用时不可硬删除，标记停用） */
+  deprecated: boolean
+}
+
 export interface AppState {
   categories: string[]
   levels: string[]
@@ -104,6 +116,8 @@ export interface AppState {
   holidays: HolidayRange[]
   paradigms: ParadigmTemplate[]
   requirements: Requirement[]
+  /** 环节库：全局预定义环节名称集合 */
+  stageLibrary: StageLibraryItem[]
   storageMode: StorageMode
   userSession: UserSession
 }

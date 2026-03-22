@@ -94,6 +94,12 @@ export const DEFAULT_APP_STATE: AppState = {
       deleted: false,
     },
   ],
+  stageLibrary: [
+    { id: 'slib-design', stageName: '需求设计', stageCategory: '设计', deprecated: false },
+    { id: 'slib-dev', stageName: '开发实现', stageCategory: '开发', deprecated: false },
+    { id: 'slib-test', stageName: '测试验证', stageCategory: '测试', deprecated: false },
+    { id: 'slib-release', stageName: '上线发布', stageCategory: '发布', deprecated: false },
+  ],
   storageMode: 'local',
   userSession: {
     email: '',

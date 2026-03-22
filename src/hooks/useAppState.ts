@@ -13,6 +13,7 @@ import type {
   ParadigmTemplate,
   Pipeline,
   Requirement,
+  StageLibraryItem,
   StorageMode,
   UserSession,
 } from '../types'
@@ -73,6 +74,9 @@ function persistState(nextState: AppState): void {
  *  removeRequirement: (id: string) => void
  *  importRequirements: (values: Requirement[]) => void
  *  importParadigms: (values: ParadigmTemplate[]) => void
+ *  upsertStageLibraryItem: (value: StageLibraryItem) => void
+ *  removeStageLibraryItem: (id: string) => void
+ *  importStageLibraryItems: (values: StageLibraryItem[]) => void
  * }} 状态对象与操作函数
  */
 export function useAppState() {
@@ -234,6 +238,56 @@ export function useAppState() {
        */
       importParadigms: (values: ParadigmTemplate[]): void => {
         commit((prev) => ({ ...prev, paradigms: [...prev.paradigms, ...values] }))
+      },
+      /**
+       * 新增或更新环节库条目（按 id 匹配：命中则更新，未命中则追加）。
+       *
+       * @param {StageLibraryItem} value 环节库条目
+       * @returns {void}
+       */
+      upsertStageLibraryItem: (value: StageLibraryItem): void => {
+        commit((prev) => {
+          const list = [...prev.stageLibrary]
+          const index = list.findIndex((item) => item.id === value.id)
+          /**
+           * 条件目的：命中现有条目时走更新分支，未命中时走新增分支。
+           */
+          if (index >= 0) {
+            list[index] = value
+          } else {
+            list.push(value)
+          }
+          return { ...prev, stageLibrary: list }
+        })
+      },
+      /**
+       * 删除指定环节库条目。
+       *
+       * @param {string} id 条目 ID
+       * @returns {void}
+       */
+      removeStageLibraryItem: (id: string): void => {
+        commit((prev) => ({
+          ...prev,
+          stageLibrary: prev.stageLibrary.filter((item) => item.id !== id),
+        }))
+      },
+      /**
+       * 批量追加环节库条目（跳过名称已存在的条目）。
+       *
+       * @param {StageLibraryItem[]} values 要追加的条目列表
+       * @returns {void}
+       */
+      importStageLibraryItems: (values: StageLibraryItem[]): void => {
+        commit((prev) => {
+          const existingNames = new Set(prev.stageLibrary.map((item) => item.stageName))
+          /**
+           * 循环目的：过滤掉已存在同名条目，避免重复。
+           */
+          const toAdd = values.filter((item) => !existingNames.has(item.stageName))
+          if (toAdd.length === 0) return prev
+          return { ...prev, stageLibrary: [...prev.stageLibrary, ...toAdd] }
+        })
       },
     }),
     [],

@@ -93,46 +93,8 @@ interface ParadigmImportResult {
   successCount: number
   /** 校验失败的范式信息 */
   errors: ParadigmImportError[]
-}
-
-/**
- * 下载范式 Excel 模板（A-I 列，含表头、示例行和列下拉验证）。
- *
- * F/G/H/I 列使用原生 Excel 下拉验证，通过 xlsxBuilder 手动构建 OOXML 实现。
- *
- * @returns {void}
- */
-function downloadParadigmTemplate(): void {
-  const rows = [
-    [
-      '范式名称',
-      '环节名称',
-      '参考人天',
-      '前置依赖环节',
-      '依赖偏移天数',
-      '依赖关系类型',
-      '触发方式',
-      '里程碑节点',
-      '模板分类',
-    ],
-    ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '', '通用'],
-    ['通用生产项目范式', '开发实现', 5, '需求设计', '', 'FS', 'finish_100', 'L1', '通用'],
-  ]
-  const blob = buildXlsxBlob(rows, [
-    { sqref: 'F2:F10000', options: ['FS', 'SS'] },
-    {
-      sqref: 'G2:G10000',
-      options: ['finish_100', 'finish_percent', 'finish_offset_days', 'start_offset_days'],
-    },
-    { sqref: 'H2:H10000', options: ['L0', 'L0.5', 'L1', 'L2'] },
-    { sqref: 'I2:I10000', options: ['通用', '增长', '基础设施'] },
-  ])
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = '范式模板导入模板.xlsx'
-  a.click()
-  URL.revokeObjectURL(url)
+  /** 本次自动追加到环节库的环节名称列表 */
+  newSlibNames: string[]
 }
 
 /**
@@ -141,8 +103,15 @@ function downloadParadigmTemplate(): void {
  * @returns {JSX.Element} 开发范式页
  */
 export function ParadigmPage(): JSX.Element {
-  const { state, addCategory, removeCategory, upsertParadigm, removeParadigm, importParadigms } =
-    useAppStateContext()
+  const {
+    state,
+    addCategory,
+    removeCategory,
+    upsertParadigm,
+    removeParadigm,
+    importParadigms,
+    importStageLibraryItems,
+  } = useAppStateContext()
   const toast = useToast()
   const { confirm } = useConfirm()
   const [newCategory, setNewCategory] = useState('')
@@ -282,6 +251,53 @@ export function ParadigmPage(): JSX.Element {
   const handleAddCategory = (): void => {
     addCategory(newCategory.trim())
     setNewCategory('')
+  }
+
+  /**
+   * 下载范式 Excel 模板（A-I 列，含表头、示例行和列下拉验证）。
+   * B列（环节名称）若环节库有条目则注入原生下拉；F/G/H/I 列固定下拉。
+   *
+   * @returns {void}
+   */
+  const handleDownloadParadigmTemplate = (): void => {
+    const rows = [
+      [
+        '范式名称',
+        '环节名称',
+        '参考人天',
+        '前置依赖环节',
+        '依赖偏移天数',
+        '依赖关系类型',
+        '触发方式',
+        '里程碑节点',
+        '模板分类',
+      ],
+      ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '', '通用'],
+      ['通用生产项目范式', '开发实现', 5, '需求设计', '', 'FS', 'finish_100', 'L1', '通用'],
+    ]
+    const activeSlibNames = state.stageLibrary
+      .filter((item) => !item.deprecated)
+      .map((item) => item.stageName)
+    const dropdowns = [
+      ...(activeSlibNames.length > 0 ? [{ sqref: 'B2:B10000', options: activeSlibNames }] : []),
+      { sqref: 'F2:F10000', options: ['FS', 'SS'] },
+      {
+        sqref: 'G2:G10000',
+        options: ['finish_100', 'finish_percent', 'finish_offset_days', 'start_offset_days'],
+      },
+      { sqref: 'H2:H10000', options: ['L0', 'L0.5', 'L1', 'L2'] },
+      {
+        sqref: 'I2:I10000',
+        options: state.categories.length > 0 ? state.categories : ['通用'],
+      },
+    ]
+    const blob = buildXlsxBlob(rows, dropdowns)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '范式模板导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   /**
@@ -473,9 +489,34 @@ export function ParadigmPage(): JSX.Element {
         importParadigms(imported)
         /** 选中第一个新导入的范式 */
         setActiveTemplateId(imported[0].id)
-      }
 
-      setImportResult({ successCount: imported.length, errors })
+        /**
+         * 环节库自动追加：收集成功范式中所有环节名称，
+         * 过滤已在环节库中存在的，追加新条目（stageCategory 留空）。
+         */
+        const existingSlibNames = new Set(state.stageLibrary.map((item) => item.stageName))
+        const newSlibItems = imported
+          .flatMap((p) => p.stageTemplates.map((s) => s.stageName))
+          .filter((name, idx, arr) => arr.indexOf(name) === idx && !existingSlibNames.has(name))
+          .map((name) => ({
+            id: createId('slib'),
+            stageName: name,
+            stageCategory: '',
+            deprecated: false,
+          }))
+        if (newSlibItems.length > 0) {
+          importStageLibraryItems(newSlibItems)
+          setImportResult({
+            successCount: imported.length,
+            errors,
+            newSlibNames: newSlibItems.map((item) => item.stageName),
+          })
+        } else {
+          setImportResult({ successCount: imported.length, errors, newSlibNames: [] })
+        }
+      } else {
+        setImportResult({ successCount: 0, errors, newSlibNames: [] })
+      }
 
       if (imported.length > 0 && errors.length === 0) {
         toast.success(`成功导入 ${imported.length} 个范式`)
@@ -590,13 +631,19 @@ export function ParadigmPage(): JSX.Element {
                   ))}
                 </ul>
               )}
+              {importResult.newSlibNames.length > 0 && (
+                <p className="muted" style={{ marginTop: 8 }}>
+                  新增 {importResult.newSlibNames.length} 条环节库条目：
+                  {importResult.newSlibNames.join('、')}
+                </p>
+              )}
             </div>
           )}
         </div>
 
         {/* 底部固定操作区：下载模板 + 批量导入 */}
         <div className="paradigm-left-actions">
-          <button className="ghost-btn" type="button" onClick={downloadParadigmTemplate}>
+          <button className="ghost-btn" type="button" onClick={handleDownloadParadigmTemplate}>
             ↓ 下载Excel模板
           </button>
           <label className="file-btn">
@@ -662,6 +709,15 @@ export function ParadigmPage(): JSX.Element {
               </button>
             </div>
 
+            {/* 环节库 datalist，供环节名称 combobox 使用 */}
+            <datalist id="stage-library-datalist">
+              {state.stageLibrary
+                .filter((item) => !item.deprecated)
+                .map((item) => (
+                  <option key={item.id} value={item.stageName} />
+                ))}
+            </datalist>
+
             <div className="stage-list">
               {activeTemplate.stageTemplates.map((stage, stageIndex) => {
                 /**
@@ -696,10 +752,21 @@ export function ParadigmPage(): JSX.Element {
                       <label className="field">
                         <span>环节名称</span>
                         <input
+                          list="stage-library-datalist"
                           value={stage.stageName}
                           onChange={(event) =>
                             updateStageField(stage.id, { stageName: event.target.value })
                           }
+                          onBlur={(event) => {
+                            const matched = state.stageLibrary.find(
+                              (item) =>
+                                !item.deprecated && item.stageName === event.target.value.trim(),
+                            )
+                            /** 条件目的：匹配到环节库条目且类别为空时自动预填类别。 */
+                            if (matched && matched.stageCategory && !stage.stageCategory) {
+                              updateStageField(stage.id, { stageCategory: matched.stageCategory })
+                            }
+                          }}
                         />
                       </label>
                       <label className="field">
