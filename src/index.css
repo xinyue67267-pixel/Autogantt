@@ -391,8 +391,8 @@ select {
   line-height: 1;
 }
 
-/* ghost 按钮（添加依赖） */
-.ghost-btn {
+/* ghost 按钮（添加依赖，仅在依赖区域使用虚线紫色风格） */
+.dep-section .ghost-btn {
   background: transparent;
   border: 1px dashed var(--color-primary-strong);
   color: var(--color-primary-strong);
@@ -403,7 +403,7 @@ select {
   transition: background 140ms ease;
 }
 
-.ghost-btn:hover {
+.dep-section .ghost-btn:hover {
   background: var(--color-primary-soft);
 }
 
@@ -422,6 +422,107 @@ select {
 .data-table tbody tr:nth-child(odd) {
   background: #fcfaff;
 }
+
+/* ════════════════════════════════════
+   需求页面专用样式
+   ════════════════════════════════════ */
+
+/* 需求页整体布局：纵向卡片堆叠 */
+.req-page {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* ── Excel 导入结果面板 ── */
+.import-result {
+  border-left: 4px solid var(--color-warning);
+}
+
+.import-result__header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.import-result__error-count {
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* 错误行表格高亮 */
+.import-error-table {
+  margin-top: 10px;
+}
+
+.import-error-row td {
+  background: #fff7ed;
+  vertical-align: top;
+}
+
+.import-error-list {
+  margin: 0;
+  padding-left: 16px;
+  color: #9a3412;
+  font-size: 13px;
+}
+
+.import-error-list li + li {
+  margin-top: 2px;
+}
+
+/* ── 行内编辑区域 ── */
+.req-edit-row td {
+  padding: 12px;
+  background: var(--color-bg-soft);
+}
+
+.req-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.req-inline-form .field {
+  min-width: 140px;
+  flex: 1;
+}
+
+.req-inline-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding-bottom: 2px;
+}
+
+/* ── 已删除需求行 ── */
+.req-deleted-row td {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+  font-size: 13px;
+}
+
+.req-deleted-row td:last-child {
+  text-decoration: none;
+}
+
+/* 已删除折叠按钮 */
+.deleted-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.deleted-toggle:hover {
+  color: var(--color-text);
+}
+
+/* ════════════════════════════════════ */
 
 .center-page {
   min-height: 100vh;
