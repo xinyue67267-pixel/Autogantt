@@ -593,7 +593,7 @@ select {
   padding: 16px;
 }
 
-/* 左侧 Toolbar：sticky 固定，高度锁死在视口内 */
+/* 左侧 Toolbar：sticky 固定，高度锁死在视口内，三段式布局 */
 .req-sidebar {
   position: sticky;
   top: calc(56px + 16px);
@@ -602,9 +602,20 @@ select {
   flex-direction: column;
   gap: 0;
   overflow: hidden;
+  padding: 0; /* 覆盖 .card 的默认 padding，由各段自行管理 */
 }
 
-/* 左侧内容可滚动区（若内容超出） */
+/* 顶部操作区（固定，不随内容滚动） */
+.req-sidebar-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* 中部可滚动区（筛选等） */
 .req-sidebar-inner {
   flex: 1;
   overflow-y: auto;
@@ -612,6 +623,20 @@ select {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 12px 16px;
+}
+
+/* 底部固定按钮区 */
+.req-sidebar-bottom {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.req-sidebar-bottom .ghost-btn {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
 }
 
 /* 左侧区块 */
@@ -658,8 +683,8 @@ select {
 }
 
 /* 左侧操作按钮：全宽 */
-.req-sidebar .primary-btn,
-.req-sidebar .file-btn {
+.req-sidebar-actions .primary-btn,
+.req-sidebar-actions .file-btn {
   width: 100%;
   text-align: center;
   justify-content: center;

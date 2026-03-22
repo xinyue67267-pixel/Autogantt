@@ -12,6 +12,7 @@ import { useConfirm } from '../context/ConfirmContext'
 import { useToast } from '../context/ToastContext'
 import type { Requirement } from '../types'
 import { createId } from '../utils/id'
+import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
 /** Excel 导入时每行的校验错误信息 */
 interface ImportRowError {
@@ -153,6 +154,61 @@ export function RequirementsPage(): JSX.Element {
    */
   const getTemplateName = (templateId: string): string =>
     state.paradigms.find((p) => p.id === templateId)?.templateName ?? templateId
+
+  /**
+   * 下载需求导入 Excel 模板（A-I 列，含表头和列下拉验证）。
+   *
+   * B列（需求级别）/E列（管线）/F列（范式）/G列（排期模式）使用 Excel 原生下拉。
+   *
+   * @returns {void}
+   */
+  const downloadRequirementTemplate = (): void => {
+    const rows = [
+      [
+        '需求名称',
+        '需求级别',
+        '数量',
+        '预期上线日期',
+        '所属管线',
+        '关联范式模板',
+        '排期模式',
+        '项目DDL',
+        '项目开始日期',
+      ],
+      [
+        '首页改版',
+        state.levels[0] ?? 'P1',
+        1,
+        '2026-06-30',
+        state.pipelines[0]?.name ?? '主线',
+        '',
+        'backward_from_ddl',
+        '2026-06-30',
+        '',
+      ],
+    ]
+    const dropdowns = [
+      {
+        sqref: 'B2:B10000',
+        options: state.levels.length > 0 ? state.levels : ['P0', 'P1', 'P2', 'P3'],
+      },
+      {
+        sqref: 'E2:E10000',
+        options: state.pipelines.length > 0 ? state.pipelines.map((p) => p.name) : ['主线'],
+      },
+      { sqref: 'G2:G10000', options: ['backward_from_ddl', 'forward_from_start'] },
+      ...(state.paradigms.length > 0
+        ? [{ sqref: 'F2:F10000', options: state.paradigms.map((p) => p.templateName) }]
+        : []),
+    ]
+    const blob = buildXlsxBlob(rows, dropdowns)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '需求导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   /**
    * 更新新增表单字段。
@@ -538,19 +594,19 @@ export function RequirementsPage(): JSX.Element {
     <section className="req-page">
       {/* ── 左侧 Toolbar ── */}
       <aside className="req-sidebar card">
-        <div className="req-sidebar-inner">
-          {/* 操作入口 */}
-          <div className="req-sidebar-section">
-            <button className="primary-btn" type="button" onClick={() => setShowAddForm((v) => !v)}>
-              {showAddForm ? '收起表单' : '+ 新增需求'}
-            </button>
-            <label className="file-btn">
-              ↑ 批量导入Excel
-              <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} />
-            </label>
-          </div>
+        {/* 顶部：操作入口（固定不滚动） */}
+        <div className="req-sidebar-actions">
+          <button className="primary-btn" type="button" onClick={() => setShowAddForm((v) => !v)}>
+            {showAddForm ? '收起表单' : '+ 新增需求'}
+          </button>
+          <label className="file-btn">
+            ↑ 批量导入Excel
+            <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} />
+          </label>
+        </div>
 
-          {/* 筛选区 */}
+        {/* 中部：筛选区（可独立滚动） */}
+        <div className="req-sidebar-inner">
           <div className="req-sidebar-section">
             <div className="req-sidebar-divider">筛选</div>
             <div className="field">
@@ -584,6 +640,13 @@ export function RequirementsPage(): JSX.Element {
               </select>
             </div>
           </div>
+        </div>
+
+        {/* 底部：下载导入模板（固定在卡片底部） */}
+        <div className="req-sidebar-bottom">
+          <button className="ghost-btn" type="button" onClick={downloadRequirementTemplate}>
+            ↓ 下载导入模板
+          </button>
         </div>
       </aside>
 
