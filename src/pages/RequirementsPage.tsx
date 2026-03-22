@@ -13,6 +13,7 @@ import { useToast } from '../context/ToastContext'
 import type { Requirement } from '../types'
 import { createId } from '../utils/id'
 import { buildXlsxBlob } from '../utils/xlsxBuilder'
+import { generateSchedules } from '../utils/schedule'
 
 /** Excel 导入时每行的校验错误信息 */
 interface ImportRowError {
@@ -95,6 +96,9 @@ export function RequirementsPage(): JSX.Element {
   /** 行内编辑表单状态 */
   const [editForm, setEditForm] = useState<Omit<Requirement, 'id' | 'deleted'> | null>(null)
 
+  /** 排期详情 Drawer 打开的需求 ID（null 表示关闭） */
+  const [drawerReqId, setDrawerReqId] = useState<string | null>(null)
+
   /** 已删除需求是否展开显示 */
   const [showDeleted, setShowDeleted] = useState(false)
 
@@ -154,6 +158,20 @@ export function RequirementsPage(): JSX.Element {
    */
   const getTemplateName = (templateId: string): string =>
     state.paradigms.find((p) => p.id === templateId)?.templateName ?? templateId
+
+  /** 全量排期（用于 Drawer 详情展示） */
+  const allSchedules = useMemo(
+    () => generateSchedules(state.requirements, state.paradigms, state.holidays),
+    [state.requirements, state.paradigms, state.holidays],
+  )
+
+  /** Drawer 中展示的需求对象 */
+  const drawerReq = drawerReqId ? state.requirements.find((r) => r.id === drawerReqId) : null
+
+  /** Drawer 中展示的排期阶段列表 */
+  const drawerStages = drawerReqId
+    ? (allSchedules.find((s) => s.requirementId === drawerReqId)?.stages ?? [])
+    : []
 
   /**
    * 下载需求导入 Excel 模板（A-I 列，含表头和列下拉验证）。
@@ -843,7 +861,15 @@ export function RequirementsPage(): JSX.Element {
                 }
                 return (
                   <tr key={item.id}>
-                    <td className="req-col-name">{item.requirementName}</td>
+                    <td className="req-col-name">
+                      <button
+                        type="button"
+                        className="req-name-link"
+                        onClick={() => setDrawerReqId(item.id)}
+                      >
+                        {item.requirementName}
+                      </button>
+                    </td>
                     <td className="req-col-level">{item.levelId}</td>
                     <td className="req-col-qty">{item.quantity}</td>
                     <td className="req-col-date">{item.expectedLaunchDate}</td>
@@ -934,6 +960,102 @@ export function RequirementsPage(): JSX.Element {
           </div>
         )}
       </div>
+
+      {/* ── 排期详情 Drawer ── */}
+      {drawerReqId && drawerReq && (
+        <>
+          {/* 遮罩 */}
+          <div className="drawer-mask" onClick={() => setDrawerReqId(null)} />
+          {/* 抽屉主体 */}
+          <div className="drawer">
+            {/* 顶部信息区 */}
+            <div className="drawer-header">
+              <div className="drawer-title-row">
+                <h2 className="drawer-title">{drawerReq.requirementName}</h2>
+                <button
+                  type="button"
+                  className="drawer-close"
+                  aria-label="关闭"
+                  onClick={() => setDrawerReqId(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="drawer-meta">
+                {(() => {
+                  const pipeline = state.pipelines.find((p) => p.id === drawerReq.pipelineId)
+                  return (
+                    <>
+                      {pipeline && (
+                        <span className="drawer-meta-item">
+                          <span className="pipeline-dot" style={{ background: pipeline.color }} />
+                          {pipeline.name}
+                        </span>
+                      )}
+                      <span className="tree-badge">{drawerReq.levelId}</span>
+                      {drawerReq.templateId && (
+                        <span className="drawer-meta-template">
+                          {getTemplateName(drawerReq.templateId)}
+                        </span>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+
+            {/* 排期明细表 */}
+            <div className="drawer-body">
+              {drawerStages.length === 0 ? (
+                <p className="muted" style={{ textAlign: 'center', marginTop: 32 }}>
+                  该需求暂无排期数据，请先关联范式模板并配置排期。
+                </p>
+              ) : (
+                <table className="data-table drawer-schedule-table">
+                  <thead>
+                    <tr>
+                      <th>环节名称</th>
+                      <th>开始日期</th>
+                      <th>结束日期</th>
+                      <th>工期</th>
+                      <th>里程碑</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drawerStages.map((stage) => {
+                      const slibColor = state.stageLibrary.find(
+                        (item) => !item.deprecated && item.stageName === stage.stageName,
+                      )?.color
+                      const pipeline = state.pipelines.find((p) => p.id === drawerReq.pipelineId)
+                      const barColor = slibColor ?? pipeline?.color ?? 'var(--color-primary)'
+                      const start = new Date(stage.startDate)
+                      const end = new Date(stage.endDate)
+                      const durationDays =
+                        Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      return (
+                        <tr key={stage.stageId}>
+                          <td>
+                            <span className="stage-color-dot" style={{ background: barColor }} />
+                            {stage.stageName}
+                          </td>
+                          <td>{stage.startDate}</td>
+                          <td>{stage.endDate}</td>
+                          <td>{durationDays}天</td>
+                          <td>
+                            {stage.isMilestone && (
+                              <span className="tree-badge">{stage.isMilestone}</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </section>
   )
 }

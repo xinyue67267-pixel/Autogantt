@@ -175,6 +175,14 @@ export function TimelinePage(): JSX.Element {
   const [dragState, setDragState] = useState<DragState | null>(null)
   /** 等待用户确认的拖拽结果 */
   const [pendingDrag, setPendingDrag] = useState<PendingDrag | null>(null)
+  /** 环节条 Hover Tooltip 状态：记录当前悬浮的行信息与鼠标位置 */
+  const [tooltip, setTooltip] = useState<{
+    stageName: string
+    startDate: string
+    endDate: string
+    x: number
+    y: number
+  } | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const canvasScrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -455,6 +463,8 @@ export function TimelinePage(): JSX.Element {
   ): void => {
     event.preventDefault()
     event.stopPropagation()
+    // 开始拖拽时隐藏 Tooltip
+    setTooltip(null)
     /** 记录拖拽前快照，供取消时恢复 */
     const snapshot = Array.from(scheduleMap.values())
     setDragState({
@@ -860,6 +870,18 @@ export function TimelinePage(): JSX.Element {
                       className="timeline-bar"
                       style={{ left: startX, width: barWidth, background: barColor }}
                       onMouseDown={(e) => handleDragStart(e, row, 'move')}
+                      onMouseMove={(e) => {
+                        // 拖拽中不显示 Tooltip
+                        if (dragState) return
+                        setTooltip({
+                          stageName: row.stage.stageName,
+                          startDate: row.stage.startDate,
+                          endDate: row.stage.endDate,
+                          x: e.clientX + 14,
+                          y: e.clientY + 14,
+                        })
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
                     >
                       <span>{row.stage.stageName}</span>
                       <div
@@ -977,6 +999,16 @@ export function TimelinePage(): JSX.Element {
                 {pendingDrag.conflicts.length > 0 ? '忽略冲突并保存' : '保存'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 环节条 Hover Tooltip ── */}
+      {tooltip && !dragState && (
+        <div className="bar-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          <div className="bar-tooltip-name">{tooltip.stageName}</div>
+          <div className="bar-tooltip-date">
+            {tooltip.startDate} ~ {tooltip.endDate}
           </div>
         </div>
       )}
