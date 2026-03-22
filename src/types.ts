@@ -10,6 +10,16 @@ export type StorageMode = 'local' | 'cloud' | 'hybrid'
 
 export type TimelineViewMode = 'day' | 'week' | 'month' | 'year'
 
+/** 管线（Pipeline）——需求所属的业务线，带自定义颜色 */
+export interface Pipeline {
+  /** 唯一标识 */
+  id: string
+  /** 管线名称 */
+  name: string
+  /** 甘特图条颜色，CSS 颜色值（如 "#C4B5FD"） */
+  color: string
+}
+
 export type DependencyTrigger =
   | 'finish_100'
   | 'finish_percent'
@@ -86,7 +96,7 @@ export interface UserSession {
 export interface AppState {
   categories: string[]
   levels: string[]
-  pipelines: { id: string; name: string; color: string }[]
+  pipelines: Pipeline[]
   holidays: HolidayRange[]
   paradigms: ParadigmTemplate[]
   requirements: Requirement[]

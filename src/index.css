@@ -782,6 +782,166 @@ select {
   color: var(--color-text-muted);
 }
 
+/* ════════════════════════════════════
+   管线管理样式
+   ════════════════════════════════════ */
+
+/* 新增管线表单：横排布局 */
+.pipeline-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px;
+  background: var(--color-bg-soft);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+
+.pipeline-add-form .field {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* "新增管线"按钮与表单底部对齐 */
+.pipeline-add-btn {
+  align-self: flex-end;
+  white-space: nowrap;
+}
+
+/* 颜色选择区域：预设色块横排 */
+.color-picker-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+/* 单个颜色方块 */
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+/* 选中状态：白色内边框 + 深色外边框 */
+.color-swatch--active {
+  border-color: #374151;
+  box-shadow: 0 0 0 2px #fff inset;
+}
+
+/* 自定义颜色按钮：隐藏原生 input，显示色块 */
+.color-custom {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.color-custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+
+.color-swatch--custom {
+  font-size: 14px;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+/* field-label：作为 div.field 内的标签文字（非 label 标签时用） */
+.field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+/* 管线列表容器 */
+.pipeline-list {
+  display: grid;
+  gap: 8px;
+}
+
+/* 单条管线行 */
+.pipeline-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+/* 编辑态：纵向堆叠 */
+.pipeline-item--editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* 管线颜色圆点 */
+.pipeline-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 管线名称 */
+.pipeline-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+/* 颜色值标签 */
+.pipeline-color-tag {
+  font-size: 11px;
+  font-family:
+    Roboto Mono,
+    Consolas,
+    monospace;
+  color: var(--color-text-muted);
+  background: var(--color-bg-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 编辑态输入框 */
+.pipeline-edit-input {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  width: 100%;
+}
+
+/* 操作按钮组靠右 */
+.pipeline-actions {
+  margin-left: auto;
+}
+
+/* ════════════════════════════════════ */
+
 @media (max-width: 900px) {
   .grid-two {
     grid-template-columns: 1fr;

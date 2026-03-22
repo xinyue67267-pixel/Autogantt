@@ -11,6 +11,7 @@ import type {
   AppState,
   HolidayRange,
   ParadigmTemplate,
+  Pipeline,
   Requirement,
   StorageMode,
   UserSession,
@@ -66,6 +67,8 @@ function persistState(nextState: AppState): void {
  *  removeHoliday: (id: string) => void
  *  upsertParadigm: (value: ParadigmTemplate) => void
  *  removeParadigm: (id: string) => void
+ *  upsertPipeline: (value: Pipeline) => void
+ *  removePipeline: (id: string) => void
  *  upsertRequirement: (value: Requirement) => void
  *  removeRequirement: (id: string) => void
  *  importRequirements: (values: Requirement[]) => void
@@ -164,6 +167,36 @@ export function useAppState() {
       },
       removeParadigm: (id: string): void => {
         commit((prev) => ({ ...prev, paradigms: prev.paradigms.filter((item) => item.id !== id) }))
+      },
+      /**
+       * 新增或更新管线（按 id 匹配：命中则更新，未命中则追加）。
+       *
+       * @param {Pipeline} value 管线数据
+       * @returns {void}
+       */
+      upsertPipeline: (value: Pipeline): void => {
+        commit((prev) => {
+          const list = [...prev.pipelines]
+          const index = list.findIndex((item) => item.id === value.id)
+          /**
+           * 条件目的：命中现有管线时走更新分支，未命中时走新增分支。
+           */
+          if (index >= 0) {
+            list[index] = value
+          } else {
+            list.push(value)
+          }
+          return { ...prev, pipelines: list }
+        })
+      },
+      /**
+       * 删除指定管线。
+       *
+       * @param {string} id 管线 ID
+       * @returns {void}
+       */
+      removePipeline: (id: string): void => {
+        commit((prev) => ({ ...prev, pipelines: prev.pipelines.filter((item) => item.id !== id) }))
       },
       upsertRequirement: (value: Requirement): void => {
         commit((prev) => {

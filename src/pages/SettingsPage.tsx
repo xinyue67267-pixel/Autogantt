@@ -3,12 +3,30 @@
  *
  * @description
  * - 管理工作日历、需求级别、模板分类
+ * - 管理管线（含颜色选择）
  * - 管理登录状态与存储模式
  */
 import { useState } from 'react'
 import { useAppStateContext } from '../context/AppStateContext'
-import type { HolidayRange, StorageMode } from '../types'
+import type { HolidayRange, Pipeline, StorageMode } from '../types'
 import { createId } from '../utils/id'
+
+/**
+ * 预设颜色板——供用户快速选择，覆盖常见业务线配色。
+ * 每个值为 CSS hex 颜色字符串。
+ */
+const PRESET_COLORS: string[] = [
+  '#C4B5FD', // 主色 lavender
+  '#F9A8D4', // 粉色
+  '#6EE7B7', // 翠绿
+  '#FCD34D', // 琥珀
+  '#FDA4AF', // 玫瑰
+  '#93C5FD', // 蓝色
+  '#FCA5A5', // 红橙
+  '#86EFAC', // 嫩绿
+  '#FB923C', // 橙色
+  '#A5B4FC', // 靛蓝
+]
 
 /**
  * 设置页组件。
@@ -25,7 +43,10 @@ export function SettingsPage(): JSX.Element {
     removeCategory,
     upsertHoliday,
     removeHoliday,
+    upsertPipeline,
+    removePipeline,
   } = useAppStateContext()
+
   const [newLevel, setNewLevel] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [holidayForm, setHolidayForm] = useState<Omit<HolidayRange, 'id'>>({
@@ -34,6 +55,18 @@ export function SettingsPage(): JSX.Element {
     endDate: '2026-10-07',
     type: 'holiday',
   })
+
+  /** 新增管线表单：名称 + 颜色 */
+  const [newPipelineName, setNewPipelineName] = useState('')
+  const [newPipelineColor, setNewPipelineColor] = useState(PRESET_COLORS[0])
+
+  /**
+   * 正在编辑的管线 ID（null 表示无行内编辑激活）。
+   * 编辑时只改名称与颜色，保留 id 不变。
+   */
+  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null)
+  const [editPipelineName, setEditPipelineName] = useState('')
+  const [editPipelineColor, setEditPipelineColor] = useState(PRESET_COLORS[0])
 
   /**
    * 新增节假日/调休日历区间。
@@ -64,8 +97,66 @@ export function SettingsPage(): JSX.Element {
     setStorageMode(mode)
   }
 
+  /**
+   * 新增管线。
+   *
+   * @returns {void}
+   */
+  const handleAddPipeline = (): void => {
+    /**
+     * 条件目的：名称为空时不新增，避免无名管线。
+     */
+    if (!newPipelineName.trim()) return
+
+    upsertPipeline({
+      id: createId('pipe'),
+      name: newPipelineName.trim(),
+      color: newPipelineColor,
+    })
+    setNewPipelineName('')
+    setNewPipelineColor(PRESET_COLORS[0])
+  }
+
+  /**
+   * 进入管线编辑模式。
+   *
+   * @param {Pipeline} pipeline 被编辑的管线
+   * @returns {void}
+   */
+  const handleStartEditPipeline = (pipeline: Pipeline): void => {
+    setEditingPipelineId(pipeline.id)
+    setEditPipelineName(pipeline.name)
+    setEditPipelineColor(pipeline.color)
+  }
+
+  /**
+   * 保存管线编辑。
+   *
+   * @param {string} id 管线 ID
+   * @returns {void}
+   */
+  const handleSavePipeline = (id: string): void => {
+    /**
+     * 条件目的：名称为空时不保存，保持数据合法性。
+     */
+    if (!editPipelineName.trim()) return
+
+    upsertPipeline({ id, name: editPipelineName.trim(), color: editPipelineColor })
+    setEditingPipelineId(null)
+  }
+
+  /**
+   * 取消管线编辑。
+   *
+   * @returns {void}
+   */
+  const handleCancelEditPipeline = (): void => {
+    setEditingPipelineId(null)
+  }
+
   return (
     <section className="grid-two">
+      {/* ── 账号与同步 ── */}
       <div className="card">
         <h2>账号与同步</h2>
         <div className="row-gap">
@@ -100,6 +191,7 @@ export function SettingsPage(): JSX.Element {
         </p>
       </div>
 
+      {/* ── 需求级别 + 模板分类 ── */}
       <div className="card">
         <h2>需求级别维护</h2>
         <div className="inline-form">
@@ -154,6 +246,156 @@ export function SettingsPage(): JSX.Element {
         </div>
       </div>
 
+      {/* ── 管线管理（含颜色选择）── */}
+      <div className="card span-two">
+        <h2>管线管理</h2>
+
+        {/* 新增管线表单 */}
+        <div className="pipeline-add-form">
+          <label className="field">
+            <span>管线名称</span>
+            <input
+              value={newPipelineName}
+              placeholder="如：主线、增长线"
+              onChange={(e) => setNewPipelineName(e.target.value)}
+              onKeyDown={(e) => {
+                /** 条件目的：回车键快速提交，提升操作效率。 */
+                if (e.key === 'Enter') handleAddPipeline()
+              }}
+            />
+          </label>
+
+          {/* 颜色选择区 */}
+          <div className="field">
+            <span className="field-label">颜色</span>
+            <div className="color-picker-wrap">
+              {/* 预设颜色板 */}
+              {PRESET_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={`color-swatch ${newPipelineColor === color ? 'color-swatch--active' : ''}`}
+                  style={{ background: color }}
+                  aria-label={`选择颜色 ${color}`}
+                  onClick={() => setNewPipelineColor(color)}
+                />
+              ))}
+              {/* 自定义颜色输入 */}
+              <label className="color-custom" title="自定义颜色">
+                <input
+                  type="color"
+                  value={newPipelineColor}
+                  onChange={(e) => setNewPipelineColor(e.target.value)}
+                />
+                <span
+                  className={`color-swatch color-swatch--custom ${!PRESET_COLORS.includes(newPipelineColor) ? 'color-swatch--active' : ''}`}
+                  style={{ background: newPipelineColor }}
+                >
+                  +
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <button
+            className="primary-btn pipeline-add-btn"
+            type="button"
+            onClick={handleAddPipeline}
+          >
+            新增管线
+          </button>
+        </div>
+
+        {/* 管线列表 */}
+        <div className="pipeline-list">
+          {state.pipelines.length === 0 && <p className="muted">暂无管线，请点击上方新增。</p>}
+          {state.pipelines.map((pipeline) => {
+            /** 条件目的：当前行处于编辑状态时渲染行内编辑表单，否则渲染只读行。 */
+            if (editingPipelineId === pipeline.id) {
+              return (
+                <div key={pipeline.id} className="pipeline-item pipeline-item--editing">
+                  <input
+                    className="pipeline-edit-input"
+                    value={editPipelineName}
+                    onChange={(e) => setEditPipelineName(e.target.value)}
+                    autoFocus
+                  />
+                  {/* 颜色选择 */}
+                  <div className="color-picker-wrap">
+                    {PRESET_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`color-swatch ${editPipelineColor === color ? 'color-swatch--active' : ''}`}
+                        style={{ background: color }}
+                        aria-label={`选择颜色 ${color}`}
+                        onClick={() => setEditPipelineColor(color)}
+                      />
+                    ))}
+                    <label className="color-custom" title="自定义颜色">
+                      <input
+                        type="color"
+                        value={editPipelineColor}
+                        onChange={(e) => setEditPipelineColor(e.target.value)}
+                      />
+                      <span
+                        className={`color-swatch color-swatch--custom ${!PRESET_COLORS.includes(editPipelineColor) ? 'color-swatch--active' : ''}`}
+                        style={{ background: editPipelineColor }}
+                      >
+                        +
+                      </span>
+                    </label>
+                  </div>
+                  <div className="row-gap">
+                    <button
+                      className="primary-btn"
+                      type="button"
+                      onClick={() => handleSavePipeline(pipeline.id)}
+                    >
+                      保存
+                    </button>
+                    <button className="ghost-btn" type="button" onClick={handleCancelEditPipeline}>
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <div key={pipeline.id} className="pipeline-item">
+                {/* 颜色点 + 名称 */}
+                <span
+                  className="pipeline-dot"
+                  style={{ background: pipeline.color }}
+                  aria-label={`管线颜色 ${pipeline.color}`}
+                />
+                <span className="pipeline-name">{pipeline.name}</span>
+                <span className="pipeline-color-tag">{pipeline.color}</span>
+                {/* 操作按钮 */}
+                <div className="row-gap pipeline-actions">
+                  <button
+                    className="ghost-btn"
+                    type="button"
+                    onClick={() => handleStartEditPipeline(pipeline)}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    className="danger-btn"
+                    type="button"
+                    onClick={() => removePipeline(pipeline.id)}
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── 工作日历 ── */}
       <div className="card span-two">
         <h2>工作日历</h2>
         <div className="field-grid">

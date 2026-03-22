@@ -9,6 +9,8 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { AppStateProvider } from './context/AppStateContext'
+import { ConfirmProvider } from './context/ConfirmContext'
+import { ToastProvider } from './context/ToastContext'
 import './index.css'
 
 /**
@@ -29,9 +31,13 @@ function renderApp(): void {
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <AppStateProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <ToastProvider>
+          <ConfirmProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </ConfirmProvider>
+        </ToastProvider>
       </AppStateProvider>
     </React.StrictMode>,
   )
