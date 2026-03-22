@@ -670,6 +670,11 @@ select {
   display: grid;
   gap: 16px;
   min-width: 0;
+  align-content: start;
+  position: sticky;
+  top: calc(56px + 16px);
+  height: calc(100vh - 56px - 32px);
+  overflow-y: auto;
 }
 
 /* 新增需求表单折叠面板 */
