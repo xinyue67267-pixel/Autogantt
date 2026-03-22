@@ -5,9 +5,13 @@
  * - 支持模板分类新增/删除
  * - 支持环节增删、isMilestone 勾选
  * - 支持多前置依赖配置（preStageId 选择、relation、trigger、value 数值输入）
+ * - 支持下载 Excel 模板并批量导入范式
  */
-import { useMemo, useState } from 'react'
+import { ChangeEvent, useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
+import { useConfirm } from '../context/ConfirmContext'
+import { useToast } from '../context/ToastContext'
 import type {
   DependencyRelation,
   DependencyTrigger,
@@ -72,16 +76,73 @@ function defaultValueForTrigger(trigger: DependencyTrigger): number {
   return trigger === 'finish_percent' ? 50 : 1
 }
 
+/** Excel 导入时每个范式的校验错误信息 */
+interface ParadigmImportError {
+  /** 范式名称 */
+  paradigmName: string
+  /** 首个错误的原始行号（从2开始，含表头行） */
+  firstRowIndex: number
+  /** 错误原因 */
+  reason: string
+}
+
+/** 范式批量导入结果 */
+interface ParadigmImportResult {
+  /** 成功创建的范式数量 */
+  successCount: number
+  /** 校验失败的范式信息 */
+  errors: ParadigmImportError[]
+}
+
+/**
+ * 下载范式 Excel 模板（A-I 列，含表头和示例行）。
+ *
+ * @returns {void}
+ */
+function downloadParadigmTemplate(): void {
+  const headers = [
+    '范式名称',
+    '环节名称',
+    '参考人天',
+    '前置依赖环节',
+    '依赖偏移天数',
+    '依赖关系类型',
+    '触发方式',
+    '里程碑',
+    '模板分类',
+  ]
+  const example = ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '否', '通用']
+  const example2 = [
+    '通用生产项目范式',
+    '开发实现',
+    5,
+    '需求设计',
+    '',
+    'FS',
+    'finish_100',
+    '否',
+    '通用',
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([headers, example, example2])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '范式模板')
+  XLSX.writeFile(wb, '范式模板导入模板.xlsx')
+}
+
 /**
  * 开发范式页组件。
  *
  * @returns {JSX.Element} 开发范式页
  */
 export function ParadigmPage(): JSX.Element {
-  const { state, addCategory, removeCategory, upsertParadigm, removeParadigm } =
+  const { state, addCategory, removeCategory, upsertParadigm, removeParadigm, importParadigms } =
     useAppStateContext()
+  const toast = useToast()
+  const { confirm } = useConfirm()
   const [newCategory, setNewCategory] = useState('')
   const [activeTemplateId, setActiveTemplateId] = useState(state.paradigms[0]?.id ?? '')
+  /** Excel 批量导入结果（null 表示尚未导入） */
+  const [importResult, setImportResult] = useState<ParadigmImportResult | null>(null)
 
   const activeTemplate = useMemo(
     () => state.paradigms.find((item) => item.id === activeTemplateId) ?? null,
@@ -217,6 +278,205 @@ export function ParadigmPage(): JSX.Element {
     setNewCategory('')
   }
 
+  /**
+   * 解析并批量导入范式 Excel 文件。
+   *
+   * 列结构：A=范式名称 B=环节名称 C=参考人天 D=前置依赖环节 E=依赖偏移天数
+   *         F=依赖关系类型 G=触发方式 H=里程碑 I=模板分类
+   *
+   * @param {ChangeEvent<HTMLInputElement>} event 文件选择事件
+   * @returns {void}
+   */
+  const handleImportParadigmExcel = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0]
+    /** 条件目的：未选择文件时直接退出，避免空读。 */
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const arrayBuffer = e.target?.result
+      if (!arrayBuffer) return
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      /** 按列字母读取，header:"A" 模式确保列名固定 */
+      const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, {
+        header: 'A',
+        defval: '',
+      })
+      /** 跳过第一行表头 */
+      const dataRows = rows.slice(1)
+
+      /**
+       * 按 A 列（范式名称）分组，同名的连续行合并为一个范式。
+       * key = 范式名称，value = 原始行列表（含行号，从2开始）
+       */
+      const groups = new Map<
+        string,
+        Array<{ row: Record<string, string | number>; lineNo: number }>
+      >()
+      dataRows.forEach((row, idx) => {
+        const name = `${row['A'] ?? ''}`.trim()
+        if (!name) return
+        if (!groups.has(name)) groups.set(name, [])
+        groups.get(name)!.push({ row, lineNo: idx + 2 })
+      })
+
+      const imported: ParadigmTemplate[] = []
+      const errors: ParadigmImportError[] = []
+
+      /**
+       * 循环目的：逐范式校验并构建模板对象，失败的范式整体跳过。
+       */
+      for (const [paradigmName, groupRows] of groups) {
+        const firstLineNo = groupRows[0].lineNo
+        const stageNames = new Set<string>()
+        const stageList: StageTemplate[] = []
+        let failed = false
+        let failReason = ''
+
+        for (const { row, lineNo } of groupRows) {
+          /* ── B列：环节名称必填 ── */
+          const stageName = `${row['B'] ?? ''}`.trim()
+          if (!stageName) {
+            failed = true
+            failReason = `第${lineNo}行：环节名称（B列）为空`
+            break
+          }
+
+          /* ── B列：同一范式内环节名称不可重复 ── */
+          if (stageNames.has(stageName)) {
+            failed = true
+            failReason = `第${lineNo}行：环节名称「${stageName}」在同一范式内重复`
+            break
+          }
+          stageNames.add(stageName)
+
+          /* ── C列：参考人天必须为正整数 ── */
+          const personDaysRaw = Number(row['C'])
+          if (!Number.isInteger(personDaysRaw) || personDaysRaw < 1) {
+            failed = true
+            failReason = `第${lineNo}行：参考人天（C列）「${row['C']}」不是正整数`
+            break
+          }
+
+          /* ── H列：里程碑 ── */
+          const isMilestone = `${row['H'] ?? ''}`.trim() === '是'
+
+          /* ── I列：模板分类 ── */
+          const categoryRaw = `${row['I'] ?? ''}`.trim() || '通用'
+
+          stageList.push({
+            id: createId('stage'),
+            stageName,
+            stageCategory: categoryRaw,
+            referencePersonDays: personDaysRaw,
+            isMilestone,
+            dependencies: [],
+          })
+        }
+
+        if (failed) {
+          errors.push({ paradigmName, firstRowIndex: firstLineNo, reason: failReason })
+          continue
+        }
+
+        /**
+         * 第二遍：解析 D 列依赖（名称 → ID）。
+         * 此时 stageList 已完整，可以按名称查找。
+         */
+        const stageByName = new Map(stageList.map((s) => [s.stageName, s.id]))
+        let depFailed = false
+        let depFailReason = ''
+
+        for (let i = 0; i < stageList.length; i++) {
+          const { row, lineNo } = groupRows[i]
+          const depNamesRaw = `${row['D'] ?? ''}`.trim()
+          if (!depNamesRaw) continue
+
+          const depNames = depNamesRaw
+            .split(',')
+            .map((n) => n.trim())
+            .filter(Boolean)
+          const deps: StageDependencyRule[] = []
+
+          for (const depName of depNames) {
+            const preId = stageByName.get(depName)
+            if (!preId) {
+              depFailed = true
+              depFailReason = `第${lineNo}行：依赖环节「${depName}」在同一范式内找不到`
+              break
+            }
+            /* ── E列：偏移天数 ── */
+            const offsetRaw = `${row['E'] ?? ''}`.trim()
+            const offsetDays = offsetRaw ? Number(offsetRaw) : 0
+
+            /* ── F列：关系类型（默认 FS） ── */
+            const relationRaw = `${row['F'] ?? ''}`.trim().toUpperCase()
+            const relation: DependencyRelation = relationRaw === 'SS' ? 'SS' : 'FS'
+
+            /* ── G列：触发方式（默认 finish_100） ── */
+            const triggerRaw = `${row['G'] ?? ''}`.trim()
+            const validTriggers: DependencyTrigger[] = [
+              'finish_100',
+              'finish_percent',
+              'finish_offset_days',
+              'start_offset_days',
+            ]
+            const trigger: DependencyTrigger = validTriggers.includes(
+              triggerRaw as DependencyTrigger,
+            )
+              ? (triggerRaw as DependencyTrigger)
+              : 'finish_100'
+
+            const dep: StageDependencyRule = { preStageId: preId, relation, trigger }
+            if (triggerNeedsValue(trigger)) {
+              dep.value = offsetDays || (trigger === 'finish_percent' ? 50 : 1)
+            }
+            deps.push(dep)
+          }
+
+          if (depFailed) break
+          stageList[i] = { ...stageList[i], dependencies: deps }
+        }
+
+        if (depFailed) {
+          errors.push({ paradigmName, firstRowIndex: firstLineNo, reason: depFailReason })
+          continue
+        }
+
+        /* ── I列：模板分类（用第一行的值作为范式分类） ── */
+        const firstRow = groupRows[0].row
+        const categoryId = (`${firstRow['I'] ?? ''}`.trim() || state.categories[0]) ?? '通用'
+
+        imported.push({
+          id: createId('tpl'),
+          templateName: paradigmName,
+          categoryId,
+          stageTemplates: stageList,
+        })
+      }
+
+      /** 条件目的：有合法范式时执行批量导入。 */
+      if (imported.length > 0) {
+        importParadigms(imported)
+        /** 选中第一个新导入的范式 */
+        setActiveTemplateId(imported[0].id)
+      }
+
+      setImportResult({ successCount: imported.length, errors })
+
+      if (imported.length > 0 && errors.length === 0) {
+        toast.success(`成功导入 ${imported.length} 个范式`)
+      } else if (imported.length > 0) {
+        toast.warning(`导入完成：${imported.length} 个成功，${errors.length} 个失败`)
+      } else {
+        toast.error(`导入失败：所有范式均校验不通过`)
+      }
+    }
+    reader.readAsArrayBuffer(file)
+    event.target.value = ''
+  }
+
   return (
     <section className="grid-two">
       {/* 左侧：分类管理 + 模板列表 */}
@@ -259,6 +519,44 @@ export function ParadigmPage(): JSX.Element {
             </li>
           ))}
         </ul>
+        {/* 下载模板 + 批量导入 */}
+        <div className="row-gap" style={{ marginTop: 12 }}>
+          <button className="ghost-btn" type="button" onClick={downloadParadigmTemplate}>
+            ↓ 下载Excel模板
+          </button>
+          <label className="file-btn">
+            ↑ 批量导入Excel
+            <input type="file" accept=".xlsx,.xls" onChange={handleImportParadigmExcel} />
+          </label>
+        </div>
+
+        {/* 导入结果面板 */}
+        {importResult && (
+          <div className="card import-result" style={{ marginTop: 12 }}>
+            <div className="import-result__header row-between">
+              <h3>
+                导入结果：成功 {importResult.successCount} 个范式
+                {importResult.errors.length > 0 && (
+                  <span className="import-result__error-count">
+                    ，{importResult.errors.length} 个失败
+                  </span>
+                )}
+              </h3>
+              <button className="ghost-btn" type="button" onClick={() => setImportResult(null)}>
+                关闭
+              </button>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="import-error-list" style={{ marginTop: 8 }}>
+                {importResult.errors.map((err) => (
+                  <li key={err.paradigmName}>
+                    行{err.firstRowIndex} · 范式「{err.paradigmName}」· 原因：{err.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 右侧：模板编辑器 */}
@@ -319,7 +617,23 @@ export function ParadigmPage(): JSX.Element {
                 <button
                   className="danger-btn"
                   type="button"
-                  onClick={() => removeParadigm(activeTemplate.id)}
+                  onClick={() =>
+                    confirm(
+                      {
+                        title: '删除范式模板',
+                        description: `确定要删除「${activeTemplate.templateName}」吗？此操作不可恢复。`,
+                        confirmLabel: '确认删除',
+                        danger: true,
+                      },
+                      () => {
+                        removeParadigm(activeTemplate.id)
+                        setActiveTemplateId(
+                          state.paradigms.find((p) => p.id !== activeTemplate.id)?.id ?? '',
+                        )
+                        toast.success(`范式「${activeTemplate.templateName}」已删除`)
+                      },
+                    )
+                  }
                 >
                   删除模板
                 </button>

@@ -72,6 +72,7 @@ function persistState(nextState: AppState): void {
  *  upsertRequirement: (value: Requirement) => void
  *  removeRequirement: (id: string) => void
  *  importRequirements: (values: Requirement[]) => void
+ *  importParadigms: (values: ParadigmTemplate[]) => void
  * }} 状态对象与操作函数
  */
 export function useAppState() {
@@ -224,6 +225,15 @@ export function useAppState() {
       },
       importRequirements: (values: Requirement[]): void => {
         commit((prev) => ({ ...prev, requirements: [...prev.requirements, ...values] }))
+      },
+      /**
+       * 批量导入范式模板（追加，不覆盖已有记录）。
+       *
+       * @param {ParadigmTemplate[]} values 要导入的范式列表
+       * @returns {void}
+       */
+      importParadigms: (values: ParadigmTemplate[]): void => {
+        commit((prev) => ({ ...prev, paradigms: [...prev.paradigms, ...values] }))
       },
     }),
     [],

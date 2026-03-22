@@ -8,6 +8,8 @@
 import { ChangeEvent, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
+import { useConfirm } from '../context/ConfirmContext'
+import { useToast } from '../context/ToastContext'
 import type { Requirement } from '../types'
 import { createId } from '../utils/id'
 
@@ -74,6 +76,8 @@ function makeEmptyForm(
  */
 export function RequirementsPage(): JSX.Element {
   const { state, upsertRequirement, removeRequirement, importRequirements } = useAppStateContext()
+  const toast = useToast()
+  const { confirm } = useConfirm()
 
   /** 新增表单状态 */
   const [form, setForm] = useState<Omit<Requirement, 'id' | 'deleted'>>(() =>
@@ -163,10 +167,14 @@ export function RequirementsPage(): JSX.Element {
     /**
      * 条件目的：需求名称为空时阻止提交，避免生成不可识别记录。
      */
-    if (!form.requirementName.trim()) return
+    if (!form.requirementName.trim()) {
+      toast.warning('请填写需求名称')
+      return
+    }
 
     upsertRequirement({ ...form, id: createId('req'), deleted: false })
     setForm((prev) => makeEmptyForm(prev.levelId, prev.pipelineId, prev.templateId))
+    toast.success('需求已新增')
   }
 
   /**
@@ -196,6 +204,7 @@ export function RequirementsPage(): JSX.Element {
     upsertRequirement({ ...editForm, id, deleted: false })
     setEditingId(null)
     setEditForm(null)
+    toast.success('需求已保存')
   }
 
   /**
@@ -216,6 +225,28 @@ export function RequirementsPage(): JSX.Element {
    */
   const handleRestore = (item: Requirement): void => {
     upsertRequirement({ ...item, deleted: false })
+    toast.success(`需求「${item.requirementName}」已恢复`)
+  }
+
+  /**
+   * 触发删除确认弹窗，用户确认后执行软删除。
+   *
+   * @param {Requirement} item 待删除的需求
+   * @returns {void}
+   */
+  const handleDeleteClick = (item: Requirement): void => {
+    confirm(
+      {
+        title: '删除需求',
+        description: `确定要删除「${item.requirementName}」吗？删除后可在已删除列表中恢复。`,
+        confirmLabel: '确认删除',
+        danger: true,
+      },
+      () => {
+        removeRequirement(item.id)
+        toast.success(`需求「${item.requirementName}」已删除`)
+      },
+    )
   }
 
   /**
@@ -337,6 +368,14 @@ export function RequirementsPage(): JSX.Element {
 
     setImportResult({ successCount: imported.length, errorRows })
     event.target.value = ''
+
+    if (imported.length > 0 && errorRows.length === 0) {
+      toast.success(`成功导入 ${imported.length} 条需求`)
+    } else if (imported.length > 0) {
+      toast.warning(`导入完成：${imported.length} 条成功，${errorRows.length} 行有误`)
+    } else {
+      toast.error(`导入失败：所有 ${errorRows.length} 行均校验不通过`)
+    }
   }
 
   /**
@@ -667,7 +706,7 @@ export function RequirementsPage(): JSX.Element {
                       <button
                         className="danger-btn"
                         type="button"
-                        onClick={() => removeRequirement(item.id)}
+                        onClick={() => handleDeleteClick(item)}
                       >
                         删除
                       </button>
