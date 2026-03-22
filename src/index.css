@@ -520,11 +520,147 @@ select {
    需求页面专用样式
    ════════════════════════════════════ */
 
-/* 需求页整体布局：纵向卡片堆叠 */
+/* 需求页整体布局：左右双列 */
 .req-page {
   display: grid;
+  grid-template-columns: 240px 1fr;
   gap: 16px;
+  align-items: start;
   padding: 16px;
+}
+
+/* 左侧 Toolbar：sticky 固定，高度锁死在视口内 */
+.req-sidebar {
+  position: sticky;
+  top: calc(56px + 16px);
+  height: calc(100vh - 56px - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* 左侧内容可滚动区（若内容超出） */
+.req-sidebar-inner {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 左侧区块 */
+.req-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 筛选区分隔线标题 */
+.req-sidebar-divider {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+/* 筛选控件：圆角胶囊 */
+.req-filter-select {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #fff;
+  font-size: 13px;
+  width: 100%;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.req-filter-select:hover {
+  border-color: var(--color-primary-strong);
+}
+
+.req-filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary-strong);
+  box-shadow: 0 0 0 3px rgba(196, 181, 253, 0.35);
+}
+
+/* 左侧操作按钮：全宽 */
+.req-sidebar .primary-btn,
+.req-sidebar .file-btn {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+}
+
+/* 右侧内容区：纵向卡片堆叠 */
+.req-content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 新增需求表单折叠面板 */
+.req-add-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-text);
+  padding: 0;
+}
+
+.req-add-toggle:hover {
+  color: var(--color-primary-strong);
+}
+
+/* 表格列宽规范 */
+.req-col-name {
+  /* flex — 由 CSS table 自动填充剩余 */
+}
+
+.req-col-level {
+  width: 80px;
+}
+
+.req-col-qty {
+  width: 80px;
+}
+
+.req-col-date {
+  width: 120px;
+  white-space: nowrap;
+}
+
+.req-col-pipeline {
+  width: 140px;
+}
+
+.req-col-actions {
+  width: 120px;
+}
+
+/* 表格底部汇总行 */
+.req-table-footer {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 8px 0 0;
+  text-align: right;
 }
 
 /* ── Excel 导入结果面板 ── */

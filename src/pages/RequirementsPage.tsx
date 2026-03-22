@@ -97,8 +97,17 @@ export function RequirementsPage(): JSX.Element {
   /** 已删除需求是否展开显示 */
   const [showDeleted, setShowDeleted] = useState(false)
 
+  /** 新增需求表单是否展开 */
+  const [showAddForm, setShowAddForm] = useState(false)
+
   /** Excel 导入结果（null 表示尚未导入或已清除） */
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  /** 级别筛选（空字符串表示不筛选） */
+  const [levelFilter, setLevelFilter] = useState('')
+
+  /** 管线筛选（空字符串表示不筛选） */
+  const [pipelineFilter, setPipelineFilter] = useState('')
 
   /** 有效需求（未删除） */
   const rows = useMemo(
@@ -110,6 +119,21 @@ export function RequirementsPage(): JSX.Element {
   const deletedRows = useMemo(
     () => state.requirements.filter((item) => item.deleted),
     [state.requirements],
+  )
+
+  /**
+   * 经筛选后展示的需求列表。
+   *
+   * @description 在 rows 基础上叠加级别与管线筛选条件。
+   */
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((item) => {
+        if (levelFilter && item.levelId !== levelFilter) return false
+        if (pipelineFilter && item.pipelineId !== pipelineFilter) return false
+        return true
+      }),
+    [rows, levelFilter, pipelineFilter],
   )
 
   /**
@@ -512,268 +536,341 @@ export function RequirementsPage(): JSX.Element {
 
   return (
     <section className="req-page">
-      {/* ── 新增需求 表单卡片 ── */}
-      <div className="card">
-        <h2>新增需求</h2>
-        <div className="field-grid">
-          <label className="field">
-            <span>需求名称</span>
-            <input
-              value={form.requirementName}
-              onChange={(event) => updateField('requirementName', event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>需求级别</span>
-            <select
-              value={form.levelId}
-              onChange={(event) => updateField('levelId', event.target.value)}
-            >
-              {state.levels.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>数量</span>
-            <input
-              type="number"
-              min={1}
-              value={form.quantity}
-              onChange={(event) => updateField('quantity', Number(event.target.value))}
-            />
-          </label>
-          <label className="field">
-            <span>预期交付时间</span>
-            <input
-              type="date"
-              value={form.expectedLaunchDate}
-              onChange={(event) => updateField('expectedLaunchDate', event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>管线</span>
-            <select
-              value={form.pipelineId}
-              onChange={(event) => updateField('pipelineId', event.target.value)}
-            >
-              {state.pipelines.map((pipeline) => (
-                <option key={pipeline.id} value={pipeline.id}>
-                  {pipeline.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>范式模板</span>
-            <select
-              value={form.templateId}
-              onChange={(event) => updateField('templateId', event.target.value)}
-            >
-              {state.paradigms.map((paradigm) => (
-                <option key={paradigm.id} value={paradigm.id}>
-                  {paradigm.templateName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>排期方式</span>
-            <select
-              value={form.scheduleMode}
-              onChange={(event) => updateField('scheduleMode', event.target.value)}
-            >
-              <option value="backward_from_ddl">输入项目DDL倒推</option>
-              <option value="forward_from_start">输入开始时间正推</option>
-            </select>
-          </label>
-          {form.scheduleMode === 'backward_from_ddl' ? (
-            <label className="field">
-              <span>项目DDL</span>
-              <input
-                type="date"
-                value={form.projectDDL}
-                onChange={(event) => updateField('projectDDL', event.target.value)}
-              />
-            </label>
-          ) : (
-            <label className="field">
-              <span>项目开始时间</span>
-              <input
-                type="date"
-                value={form.projectStartDate}
-                onChange={(event) => updateField('projectStartDate', event.target.value)}
-              />
-            </label>
-          )}
-        </div>
-        <div className="row-gap">
-          <button className="primary-btn" type="button" onClick={handleAdd}>
-            新增需求
-          </button>
-          <label className="file-btn">
-            批量导入Excel
-            <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} />
-          </label>
-        </div>
-      </div>
-
-      {/* ── Excel 导入结果面板 ── */}
-      {importResult && (
-        <div className="card import-result">
-          <div className="import-result__header row-between">
-            <h3>
-              导入结果：成功 {importResult.successCount} 条
-              {importResult.errorRows.length > 0 && (
-                <span className="import-result__error-count">
-                  ，{importResult.errorRows.length} 行校验失败
-                </span>
-              )}
-            </h3>
-            <button className="ghost-btn" type="button" onClick={() => setImportResult(null)}>
-              关闭
+      {/* ── 左侧 Toolbar ── */}
+      <aside className="req-sidebar card">
+        <div className="req-sidebar-inner">
+          {/* 操作入口 */}
+          <div className="req-sidebar-section">
+            <button className="primary-btn" type="button" onClick={() => setShowAddForm((v) => !v)}>
+              {showAddForm ? '收起表单' : '+ 新增需求'}
             </button>
+            <label className="file-btn">
+              ↑ 批量导入Excel
+              <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} />
+            </label>
           </div>
 
-          {/* 错误行列表 */}
-          {importResult.errorRows.length > 0 && (
-            <table className="data-table import-error-table">
-              <thead>
-                <tr>
-                  <th>行号</th>
-                  <th>原始需求名称</th>
-                  <th>错误原因</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importResult.errorRows.map((errRow) => (
-                  <tr key={errRow.rowIndex} className="import-error-row">
-                    <td>第 {errRow.rowIndex} 行</td>
-                    <td>{`${errRow.raw.requirementName ?? errRow.raw['需求名称'] ?? '（空）'}`}</td>
-                    <td>
-                      <ul className="import-error-list">
-                        {errRow.errors.map((msg, idx) => (
-                          <li key={idx}>{msg}</li>
-                        ))}
-                      </ul>
+          {/* 筛选区 */}
+          <div className="req-sidebar-section">
+            <div className="req-sidebar-divider">筛选</div>
+            <div className="field">
+              <span className="field-label">需求级别</span>
+              <select
+                className="req-filter-select"
+                value={levelFilter}
+                onChange={(e) => setLevelFilter(e.target.value)}
+              >
+                <option value="">全部级别</option>
+                {state.levels.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <span className="field-label">管线</span>
+              <select
+                className="req-filter-select"
+                value={pipelineFilter}
+                onChange={(e) => setPipelineFilter(e.target.value)}
+              >
+                <option value="">全部管线</option>
+                {state.pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── 右侧内容区 ── */}
+      <div className="req-content">
+        {/* 新增需求表单（可折叠） */}
+        {showAddForm && (
+          <div className="card">
+            <h2>新增需求</h2>
+            <div className="field-grid">
+              <label className="field">
+                <span>需求名称</span>
+                <input
+                  value={form.requirementName}
+                  onChange={(event) => updateField('requirementName', event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>需求级别</span>
+                <select
+                  value={form.levelId}
+                  onChange={(event) => updateField('levelId', event.target.value)}
+                >
+                  {state.levels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>数量</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.quantity}
+                  onChange={(event) => updateField('quantity', Number(event.target.value))}
+                />
+              </label>
+              <label className="field">
+                <span>预期交付时间</span>
+                <input
+                  type="date"
+                  value={form.expectedLaunchDate}
+                  onChange={(event) => updateField('expectedLaunchDate', event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>管线</span>
+                <select
+                  value={form.pipelineId}
+                  onChange={(event) => updateField('pipelineId', event.target.value)}
+                >
+                  {state.pipelines.map((pipeline) => (
+                    <option key={pipeline.id} value={pipeline.id}>
+                      {pipeline.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>范式模板</span>
+                <select
+                  value={form.templateId}
+                  onChange={(event) => updateField('templateId', event.target.value)}
+                >
+                  {state.paradigms.map((paradigm) => (
+                    <option key={paradigm.id} value={paradigm.id}>
+                      {paradigm.templateName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>排期方式</span>
+                <select
+                  value={form.scheduleMode}
+                  onChange={(event) => updateField('scheduleMode', event.target.value)}
+                >
+                  <option value="backward_from_ddl">输入项目DDL倒推</option>
+                  <option value="forward_from_start">输入开始时间正推</option>
+                </select>
+              </label>
+              {form.scheduleMode === 'backward_from_ddl' ? (
+                <label className="field">
+                  <span>项目DDL</span>
+                  <input
+                    type="date"
+                    value={form.projectDDL}
+                    onChange={(event) => updateField('projectDDL', event.target.value)}
+                  />
+                </label>
+              ) : (
+                <label className="field">
+                  <span>项目开始时间</span>
+                  <input
+                    type="date"
+                    value={form.projectStartDate}
+                    onChange={(event) => updateField('projectStartDate', event.target.value)}
+                  />
+                </label>
+              )}
+            </div>
+            <div className="row-gap">
+              <button className="primary-btn" type="button" onClick={handleAdd}>
+                新增需求
+              </button>
+              <button className="ghost-btn" type="button" onClick={() => setShowAddForm(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Excel 导入结果面板 */}
+        {importResult && (
+          <div className="card import-result">
+            <div className="import-result__header row-between">
+              <h3>
+                导入结果：成功 {importResult.successCount} 条
+                {importResult.errorRows.length > 0 && (
+                  <span className="import-result__error-count">
+                    ，{importResult.errorRows.length} 行校验失败
+                  </span>
+                )}
+              </h3>
+              <button className="ghost-btn" type="button" onClick={() => setImportResult(null)}>
+                关闭
+              </button>
+            </div>
+            {importResult.errorRows.length > 0 && (
+              <table className="data-table import-error-table">
+                <thead>
+                  <tr>
+                    <th>行号</th>
+                    <th>原始需求名称</th>
+                    <th>错误原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importResult.errorRows.map((errRow) => (
+                    <tr key={errRow.rowIndex} className="import-error-row">
+                      <td>第 {errRow.rowIndex} 行</td>
+                      <td>{`${errRow.raw.requirementName ?? errRow.raw['需求名称'] ?? '（空）'}`}</td>
+                      <td>
+                        <ul className="import-error-list">
+                          {errRow.errors.map((msg, idx) => (
+                            <li key={idx}>{msg}</li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* 需求列表 */}
+        <div className="card">
+          <div className="row-between" style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0 }}>需求列表</h2>
+            {(levelFilter || pipelineFilter) && (
+              <button
+                className="ghost-btn"
+                type="button"
+                style={{ fontSize: 12 }}
+                onClick={() => {
+                  setLevelFilter('')
+                  setPipelineFilter('')
+                }}
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="req-col-name">需求名称</th>
+                <th className="req-col-level">级别</th>
+                <th className="req-col-qty">数量</th>
+                <th className="req-col-date">预期交付时间</th>
+                <th className="req-col-pipeline">管线</th>
+                <th className="req-col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((item) => {
+                /** 条件目的：当前行处于编辑状态时，渲染行内编辑表单而非只读行。 */
+                if (editingId === item.id) {
+                  return renderEditRow(item)
+                }
+                return (
+                  <tr key={item.id}>
+                    <td className="req-col-name">{item.requirementName}</td>
+                    <td className="req-col-level">{item.levelId}</td>
+                    <td className="req-col-qty">{item.quantity}</td>
+                    <td className="req-col-date">{item.expectedLaunchDate}</td>
+                    <td className="req-col-pipeline">{getPipelineName(item.pipelineId)}</td>
+                    <td className="req-col-actions">
+                      <div className="row-gap">
+                        <button
+                          className="ghost-btn"
+                          type="button"
+                          onClick={() => handleStartEdit(item)}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="danger-btn"
+                          type="button"
+                          onClick={() => handleDeleteClick(item)}
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* ── 需求列表 ── */}
-      <div className="card">
-        <h2>需求列表（{rows.length} 条）</h2>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>需求名称</th>
-              <th>级别</th>
-              <th>数量</th>
-              <th>预期交付时间</th>
-              <th>管线</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((item) => {
-              /** 条件目的：当前行处于编辑状态时，渲染行内编辑表单而非只读行。 */
-              if (editingId === item.id) {
-                return renderEditRow(item)
-              }
-              return (
-                <tr key={item.id}>
-                  <td>{item.requirementName}</td>
-                  <td>{item.levelId}</td>
-                  <td>{item.quantity}</td>
-                  <td>{item.expectedLaunchDate}</td>
-                  <td>{getPipelineName(item.pipelineId)}</td>
-                  <td>
-                    <div className="row-gap">
-                      <button
-                        className="ghost-btn"
-                        type="button"
-                        onClick={() => handleStartEdit(item)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        className="danger-btn"
-                        type="button"
-                        onClick={() => handleDeleteClick(item)}
-                      >
-                        删除
-                      </button>
-                    </div>
+                )
+              })}
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                    {rows.length === 0 ? '暂无需求，请新增或导入' : '无符合筛选条件的需求'}
                   </td>
                 </tr>
-              )
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                  暂无需求，请新增或导入
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── 已删除需求（可恢复）── */}
-      {deletedRows.length > 0 && (
-        <div className="card">
-          <button
-            className="deleted-toggle"
-            type="button"
-            onClick={() => setShowDeleted((v) => !v)}
-          >
-            {showDeleted ? '▲' : '▼'} 已删除需求（{deletedRows.length} 条，可恢复）
-          </button>
-          {showDeleted && (
-            <table className="data-table" style={{ marginTop: 10 }}>
-              <thead>
-                <tr>
-                  <th>需求名称</th>
-                  <th>级别</th>
-                  <th>数量</th>
-                  <th>预期交付时间</th>
-                  <th>管线 / 模板</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deletedRows.map((item) => (
-                  <tr key={item.id} className="req-deleted-row">
-                    <td>{item.requirementName}</td>
-                    <td>{item.levelId}</td>
-                    <td>{item.quantity}</td>
-                    <td>{item.expectedLaunchDate}</td>
-                    <td>
-                      {getPipelineName(item.pipelineId)} / {getTemplateName(item.templateId)}
-                    </td>
-                    <td>
-                      <button
-                        className="primary-btn"
-                        type="button"
-                        onClick={() => handleRestore(item)}
-                      >
-                        恢复
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+              )}
+            </tbody>
+          </table>
+          {/* 底部汇总 */}
+          <div className="req-table-footer">
+            共 {rows.length} 条
+            {(levelFilter || pipelineFilter) && `，当前筛选显示 ${filteredRows.length} 条`}
+          </div>
         </div>
-      )}
+
+        {/* 已删除需求（可恢复） */}
+        {deletedRows.length > 0 && (
+          <div className="card">
+            <button
+              className="deleted-toggle"
+              type="button"
+              onClick={() => setShowDeleted((v) => !v)}
+            >
+              {showDeleted ? '▲' : '▼'} 已删除需求（{deletedRows.length} 条，可恢复）
+            </button>
+            {showDeleted && (
+              <table className="data-table" style={{ marginTop: 10 }}>
+                <thead>
+                  <tr>
+                    <th className="req-col-name">需求名称</th>
+                    <th className="req-col-level">级别</th>
+                    <th className="req-col-qty">数量</th>
+                    <th className="req-col-date">预期交付时间</th>
+                    <th className="req-col-pipeline">管线 / 模板</th>
+                    <th className="req-col-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deletedRows.map((item) => (
+                    <tr key={item.id} className="req-deleted-row">
+                      <td>{item.requirementName}</td>
+                      <td>{item.levelId}</td>
+                      <td>{item.quantity}</td>
+                      <td>{item.expectedLaunchDate}</td>
+                      <td>
+                        {getPipelineName(item.pipelineId)} / {getTemplateName(item.templateId)}
+                      </td>
+                      <td>
+                        <button
+                          className="primary-btn"
+                          type="button"
+                          onClick={() => handleRestore(item)}
+                        >
+                          恢复
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
