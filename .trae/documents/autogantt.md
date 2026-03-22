@@ -12,5 +12,13 @@
 项目开发过程中， 每次会话结束的时候，必须升级package.json里的版本，并做代码git提交
 每次提交前，必须使用ESLint 扫描+ Prettier扫描+ TypeScript扫描检查代码质量
 每次提交前， 更新history.md,按以下模板添加日志：#版本（#日期)#一句话简要说明改动内容
-提交代码时，使用Conventional Commits规范在git comment里描述代码的改动
-提交前检查文件列表， 不属于项目源代码的文件和目录(如临时工具、测试数据、调试log 等)要添加到.gitignore里避免提交进repo
+提交代码时，使用Conventional Commits规范在git comment里描述代码的改动， 包括但不限于：
+
+- feat：新增功能
+- fix：修复bug
+- docs：文档变更
+- style：代码格式（不影响代码运行的变动）
+- refactor：代码重构（既不新增功能，也不是修复bug的代码变动）
+- test：新增测试或修改现有测试
+- chore：构建过程或辅助工具的变动
+  提交前检查文件列表， 不属于项目源代码的文件和目录(如临时工具、测试数据、调试log 等)要添加到.gitignore里避免提交进repo
