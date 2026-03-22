@@ -20,6 +20,7 @@ import type {
   StageTemplate,
 } from '../types'
 import { createId } from '../utils/id'
+import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
 /**
  * 创建默认环节对象。
@@ -32,7 +33,7 @@ function createDefaultStage(): StageTemplate {
     stageName: '新环节',
     stageCategory: '开发',
     referencePersonDays: 1,
-    isMilestone: false,
+    isMilestone: '',
     dependencies: [],
   }
 }
@@ -95,38 +96,43 @@ interface ParadigmImportResult {
 }
 
 /**
- * 下载范式 Excel 模板（A-I 列，含表头和示例行）。
+ * 下载范式 Excel 模板（A-I 列，含表头、示例行和列下拉验证）。
+ *
+ * F/G/H/I 列使用原生 Excel 下拉验证，通过 xlsxBuilder 手动构建 OOXML 实现。
  *
  * @returns {void}
  */
 function downloadParadigmTemplate(): void {
-  const headers = [
-    '范式名称',
-    '环节名称',
-    '参考人天',
-    '前置依赖环节',
-    '依赖偏移天数',
-    '依赖关系类型',
-    '触发方式',
-    '里程碑',
-    '模板分类',
+  const rows = [
+    [
+      '范式名称',
+      '环节名称',
+      '参考人天',
+      '前置依赖环节',
+      '依赖偏移天数',
+      '依赖关系类型',
+      '触发方式',
+      '里程碑节点',
+      '模板分类',
+    ],
+    ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '', '通用'],
+    ['通用生产项目范式', '开发实现', 5, '需求设计', '', 'FS', 'finish_100', 'L1', '通用'],
   ]
-  const example = ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '否', '通用']
-  const example2 = [
-    '通用生产项目范式',
-    '开发实现',
-    5,
-    '需求设计',
-    '',
-    'FS',
-    'finish_100',
-    '否',
-    '通用',
-  ]
-  const ws = XLSX.utils.aoa_to_sheet([headers, example, example2])
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '范式模板')
-  XLSX.writeFile(wb, '范式模板导入模板.xlsx')
+  const blob = buildXlsxBlob(rows, [
+    { sqref: 'F2:F10000', options: ['FS', 'SS'] },
+    {
+      sqref: 'G2:G10000',
+      options: ['finish_100', 'finish_percent', 'finish_offset_days', 'start_offset_days'],
+    },
+    { sqref: 'H2:H10000', options: ['L0', 'L0.5', 'L1', 'L2'] },
+    { sqref: 'I2:I10000', options: ['通用', '增长', '基础设施'] },
+  ])
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '范式模板导入模板.xlsx'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -359,8 +365,14 @@ export function ParadigmPage(): JSX.Element {
             break
           }
 
-          /* ── H列：里程碑 ── */
-          const isMilestone = `${row['H'] ?? ''}`.trim() === '是'
+          /* ── H列：里程碑节点（L0/L0.5/L1/L2，留空表示非里程碑）── */
+          const milestoneRaw = `${row['H'] ?? ''}`.trim()
+          const MILESTONE_VALUES = ['L0', 'L0.5', 'L1', 'L2'] as const
+          const isMilestone = MILESTONE_VALUES.includes(
+            milestoneRaw as (typeof MILESTONE_VALUES)[number],
+          )
+            ? (milestoneRaw as (typeof MILESTONE_VALUES)[number])
+            : ('' as const)
 
           /* ── I列：模板分类 ── */
           const categoryRaw = `${row['I'] ?? ''}`.trim() || '通用'
@@ -712,16 +724,23 @@ export function ParadigmPage(): JSX.Element {
                           }
                         />
                       </label>
-                      {/* isMilestone 里程碑勾选框 */}
-                      <label className="field field--checkbox">
-                        <input
-                          type="checkbox"
-                          checked={stage.isMilestone}
+                      {/* 里程碑节点下拉 */}
+                      <label className="field">
+                        <span>里程碑节点</span>
+                        <select
+                          value={stage.isMilestone}
                           onChange={(event) =>
-                            updateStageField(stage.id, { isMilestone: event.target.checked })
+                            updateStageField(stage.id, {
+                              isMilestone: event.target.value as 'L0' | 'L0.5' | 'L1' | 'L2' | '',
+                            })
                           }
-                        />
-                        <span>里程碑节点（DDL）</span>
+                        >
+                          <option value="">— 非里程碑 —</option>
+                          <option value="L0">L0</option>
+                          <option value="L0.5">L0.5</option>
+                          <option value="L1">L1</option>
+                          <option value="L2">L2</option>
+                        </select>
                       </label>
                     </div>
 

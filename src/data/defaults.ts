@@ -24,7 +24,7 @@ function createDefaultParadigms(): ParadigmTemplate[] {
           stageName: '需求设计',
           stageCategory: '设计',
           referencePersonDays: 3,
-          isMilestone: false,
+          isMilestone: '',
           dependencies: [],
         },
         {
@@ -32,7 +32,7 @@ function createDefaultParadigms(): ParadigmTemplate[] {
           stageName: '开发实现',
           stageCategory: '开发',
           referencePersonDays: 5,
-          isMilestone: false,
+          isMilestone: '',
           dependencies: [
             { preStageId: 'stage-design', relation: 'FS', trigger: 'finish_100', value: 100 },
           ],
@@ -42,7 +42,7 @@ function createDefaultParadigms(): ParadigmTemplate[] {
           stageName: '测试验证',
           stageCategory: '测试',
           referencePersonDays: 3,
-          isMilestone: false,
+          isMilestone: '',
           dependencies: [
             { preStageId: 'stage-dev', relation: 'FS', trigger: 'finish_100', value: 100 },
           ],
@@ -52,7 +52,7 @@ function createDefaultParadigms(): ParadigmTemplate[] {
           stageName: '上线发布',
           stageCategory: '发布',
           referencePersonDays: 1,
-          isMilestone: true,
+          isMilestone: 'L1',
           dependencies: [
             { preStageId: 'stage-test', relation: 'FS', trigger: 'finish_100', value: 100 },
           ],

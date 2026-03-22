@@ -43,12 +43,15 @@ export interface StageDependencyRule {
   value?: number
 }
 
+export type MilestoneLevel = 'L0' | 'L0.5' | 'L1' | 'L2'
+
 export interface StageTemplate {
   id: string
   stageName: string
   stageCategory: string
   referencePersonDays: number
-  isMilestone: boolean
+  /** 里程碑节点类型，空字符串表示非里程碑 */
+  isMilestone: MilestoneLevel | ''
   dependencies: StageDependencyRule[]
 }
 
@@ -77,7 +80,8 @@ export interface StageInstance {
   stageId: string
   stageName: string
   stageCategory: string
-  isMilestone: boolean
+  /** 里程碑节点类型，空字符串表示非里程碑 */
+  isMilestone: MilestoneLevel | ''
   startDate: string
   endDate: string
 }
