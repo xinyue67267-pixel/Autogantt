@@ -343,16 +343,15 @@ select {
   background: #fff1f2;
 }
 
-/* 范式页左侧面板：sticky 固定，高度受视口限制，内部独立滚动 */
+/* 范式页左侧面板：固定高度，三段式布局（顶部分类 + 中部列表滚动 + 底部操作固定） */
 .paradigm-left {
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* sticky 使左侧始终贴在 header 下方，不随右侧内容上下移动 */
   position: sticky;
   top: calc(56px + 16px); /* header 56px + page-container 上内边距 16px */
-  /* 最大高度 = 视口 - header - 上下 padding */
-  max-height: calc(100vh - 56px - 32px);
+  /* 固定高度锁死在视口可用区域，无论右侧内容多长都不伸长 */
+  height: calc(100vh - 56px - 32px); /* 视口 - header - 上下padding各16px */
   overflow: hidden;
 }
 
