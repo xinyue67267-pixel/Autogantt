@@ -23,6 +23,29 @@ import { createId } from '../utils/id'
 import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
 /**
+ * 环节库预设颜色板——与设置页保持一致，供自动追加环节库条目时循环取色。
+ * 共 16 色，覆盖主题色系。
+ */
+const SLIB_PRESET_COLORS: string[] = [
+  '#C4B5FD',
+  '#A78BFA',
+  '#7C3AED',
+  '#F9A8D4',
+  '#F472B6',
+  '#6EE7B7',
+  '#34D399',
+  '#FCD34D',
+  '#FBBF24',
+  '#FDA4AF',
+  '#F87171',
+  '#93C5FD',
+  '#94A3B8',
+  '#64748B',
+  '#6B7280',
+  '#9CA3AF',
+]
+
+/**
  * 创建默认环节对象。
  *
  * @returns {StageTemplate} 默认环节
@@ -498,10 +521,16 @@ export function ParadigmPage(): JSX.Element {
         const newSlibItems = imported
           .flatMap((p) => p.stageTemplates.map((s) => s.stageName))
           .filter((name, idx, arr) => arr.indexOf(name) === idx && !existingSlibNames.has(name))
-          .map((name) => ({
+          .map((name, idx) => ({
             id: createId('slib'),
             stageName: name,
             stageCategory: '',
+            /**
+             * 自动预设颜色：按当前环节库总数加本批次序号循环取色，
+             * 确保批量追加后各环节颜色各异。
+             */
+            color:
+              SLIB_PRESET_COLORS[(state.stageLibrary.length + idx) % SLIB_PRESET_COLORS.length],
             deprecated: false,
           }))
         if (newSlibItems.length > 0) {

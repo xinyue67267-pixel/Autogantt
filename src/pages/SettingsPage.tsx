@@ -198,10 +198,16 @@ export function SettingsPage(): JSX.Element {
       toast.warning(`环节「${name}」已存在`)
       return
     }
+    /**
+     * 预设颜色：按当前环节库总数取色板中对应颜色，确保新环节与已有环节颜色不同。
+     * 使用 index % PRESET_COLORS.length 循环取色。
+     */
+    const presetColor = PRESET_COLORS[state.stageLibrary.length % PRESET_COLORS.length]
     upsertStageLibraryItem({
       id: createId('slib'),
       stageName: name,
       stageCategory: newStageCategory.trim(),
+      color: presetColor,
       deprecated: false,
     })
     setNewStageName('')
@@ -300,6 +306,7 @@ export function SettingsPage(): JSX.Element {
 
       /**
        * 循环目的：逐行解析环节名称、类别与颜色，过滤无效行。
+       * 颜色优先级：用户填写 > 自动预设（按全局顺序 index % 16 循环取色）。
        */
       for (const row of dataRows) {
         const name = `${row['A'] ?? ''}`.trim()
@@ -310,11 +317,17 @@ export function SettingsPage(): JSX.Element {
         }
         existingNames.add(name)
         const rawColor = `${row['C'] ?? ''}`.trim()
+        /**
+         * 自动预设颜色：若用户未填写颜色列，则按当前已有条目总数（含本批次已处理条目）
+         * 从色板中循环取色，确保批量导入后各环节颜色各异。
+         */
+        const autoColor =
+          PRESET_COLORS[(state.stageLibrary.length + toAdd.length) % PRESET_COLORS.length]
         toAdd.push({
           id: createId('slib'),
           stageName: name,
           stageCategory: `${row['B'] ?? ''}`.trim(),
-          color: rawColor || undefined,
+          color: rawColor || autoColor,
           deprecated: false,
         })
       }

@@ -37,6 +37,29 @@ import { createId } from '../utils/id'
 /** 每行高度（px），与 CSS .timeline-row min-height 保持一致 */
 const ROW_HEIGHT = 42
 
+/**
+ * 环节库预设颜色板——与设置页保持一致，供自动追加环节库条目时循环取色。
+ * 共 16 色，覆盖主题色系。
+ */
+const SLIB_PRESET_COLORS: string[] = [
+  '#C4B5FD',
+  '#A78BFA',
+  '#7C3AED',
+  '#F9A8D4',
+  '#F472B6',
+  '#6EE7B7',
+  '#34D399',
+  '#FCD34D',
+  '#FBBF24',
+  '#FDA4AF',
+  '#F87171',
+  '#93C5FD',
+  '#94A3B8',
+  '#64748B',
+  '#6B7280',
+  '#9CA3AF',
+]
+
 /** 时间轴 Header 高度（px） */
 const HEADER_HEIGHT = 40
 
@@ -777,10 +800,15 @@ export function TimelinePage(): JSX.Element {
     // 创建新环节库条目
     if (newStageLibNames.size > 0) {
       importStageLibraryItems(
-        Array.from(newStageLibNames).map((stageName) => ({
+        Array.from(newStageLibNames).map((stageName, idx) => ({
           id: createId('slib'),
           stageName,
           stageCategory: '',
+          /**
+           * 自动预设颜色：按当前环节库总数加本批次序号循环取色，
+           * 确保批量追加后各环节颜色各异。
+           */
+          color: SLIB_PRESET_COLORS[(state.stageLibrary.length + idx) % SLIB_PRESET_COLORS.length],
           deprecated: false,
         })),
       )
@@ -1012,10 +1040,15 @@ export function TimelinePage(): JSX.Element {
     }
     if (newStageLibNames.size > 0) {
       importStageLibraryItems(
-        Array.from(newStageLibNames).map((stageName) => ({
+        Array.from(newStageLibNames).map((stageName, idx) => ({
           id: createId('slib'),
           stageName,
           stageCategory: '',
+          /**
+           * 自动预设颜色：按当前环节库总数加本批次序号循环取色，
+           * 确保批量追加后各环节颜色各异。
+           */
+          color: SLIB_PRESET_COLORS[(state.stageLibrary.length + idx) % SLIB_PRESET_COLORS.length],
           deprecated: false,
         })),
       )
