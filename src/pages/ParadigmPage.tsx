@@ -478,49 +478,112 @@ export function ParadigmPage(): JSX.Element {
   }
 
   return (
-    <section className="grid-two">
-      {/* 左侧：分类管理 + 模板列表 */}
-      <div className="card">
-        <h2>模板分类</h2>
-        <div className="inline-form">
-          <input
-            value={newCategory}
-            placeholder="新增分类"
-            onChange={(event) => setNewCategory(event.target.value)}
-          />
-          <button className="primary-btn" type="button" onClick={handleAddCategory}>
-            添加
-          </button>
-        </div>
-        <div className="chip-wrap">
-          {state.categories.map((item) => (
-            <button key={item} className="chip" type="button" onClick={() => removeCategory(item)}>
-              {item} ×
+    <section className="grid-paradigm">
+      {/* 左侧：分类管理 + 模板列表 + 底部操作 */}
+      <div className="card paradigm-left">
+        <div className="paradigm-left-scroll">
+          <h2>模板分类</h2>
+          <div className="inline-form">
+            <input
+              value={newCategory}
+              placeholder="新增分类"
+              onChange={(event) => setNewCategory(event.target.value)}
+            />
+            <button className="primary-btn" type="button" onClick={handleAddCategory}>
+              添加
             </button>
-          ))}
-        </div>
-        <hr />
-        <div className="row-between">
-          <h2>范式模板</h2>
-          <button className="primary-btn" type="button" onClick={handleAddTemplate}>
-            新建模板
-          </button>
-        </div>
-        <ul className="menu-list">
-          {state.paradigms.map((item) => (
-            <li key={item.id}>
+          </div>
+          <div className="chip-wrap">
+            {state.categories.map((item) => (
               <button
-                className={`menu-item ${item.id === activeTemplateId ? 'active' : ''}`}
+                key={item}
+                className="chip"
                 type="button"
-                onClick={() => setActiveTemplateId(item.id)}
+                onClick={() => removeCategory(item)}
               >
-                {item.templateName}
+                {item} ×
               </button>
-            </li>
-          ))}
-        </ul>
-        {/* 下载模板 + 批量导入 */}
-        <div className="row-gap" style={{ marginTop: 12 }}>
+            ))}
+          </div>
+          <hr />
+          <div className="row-between" style={{ marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>范式模板</h2>
+            <button className="primary-btn" type="button" onClick={handleAddTemplate}>
+              + 新建
+            </button>
+          </div>
+          <ul className="menu-list">
+            {state.paradigms.map((item) => (
+              <li key={item.id}>
+                <button
+                  className={`menu-item ${item.id === activeTemplateId ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveTemplateId(item.id)}
+                >
+                  {item.templateName}
+                </button>
+                {/* 悬浮时显示删除按钮 */}
+                <button
+                  className="menu-item-delete"
+                  type="button"
+                  aria-label={`删除范式 ${item.templateName}`}
+                  onClick={() =>
+                    confirm(
+                      {
+                        title: '删除范式模板',
+                        description: `确定要删除「${item.templateName}」吗？此操作不可恢复。`,
+                        confirmLabel: '确认删除',
+                        danger: true,
+                      },
+                      () => {
+                        removeParadigm(item.id)
+                        if (item.id === activeTemplateId) {
+                          setActiveTemplateId(
+                            state.paradigms.find((p) => p.id !== item.id)?.id ?? '',
+                          )
+                        }
+                        toast.success(`范式「${item.templateName}」已删除`)
+                      },
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* 导入结果面板 */}
+          {importResult && (
+            <div className="card import-result" style={{ marginTop: 12 }}>
+              <div className="import-result__header row-between">
+                <h3>
+                  导入结果：成功 {importResult.successCount} 个范式
+                  {importResult.errors.length > 0 && (
+                    <span className="import-result__error-count">
+                      ，{importResult.errors.length} 个失败
+                    </span>
+                  )}
+                </h3>
+                <button className="ghost-btn" type="button" onClick={() => setImportResult(null)}>
+                  关闭
+                </button>
+              </div>
+              {importResult.errors.length > 0 && (
+                <ul className="import-error-list" style={{ marginTop: 8 }}>
+                  {importResult.errors.map((err) => (
+                    <li key={err.paradigmName}>
+                      行{err.firstRowIndex} · 范式「{err.paradigmName}」· 原因：{err.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 底部固定操作区：下载模板 + 批量导入 */}
+        <div className="paradigm-left-actions">
           <button className="ghost-btn" type="button" onClick={downloadParadigmTemplate}>
             ↓ 下载Excel模板
           </button>
@@ -529,34 +592,6 @@ export function ParadigmPage(): JSX.Element {
             <input type="file" accept=".xlsx,.xls" onChange={handleImportParadigmExcel} />
           </label>
         </div>
-
-        {/* 导入结果面板 */}
-        {importResult && (
-          <div className="card import-result" style={{ marginTop: 12 }}>
-            <div className="import-result__header row-between">
-              <h3>
-                导入结果：成功 {importResult.successCount} 个范式
-                {importResult.errors.length > 0 && (
-                  <span className="import-result__error-count">
-                    ，{importResult.errors.length} 个失败
-                  </span>
-                )}
-              </h3>
-              <button className="ghost-btn" type="button" onClick={() => setImportResult(null)}>
-                关闭
-              </button>
-            </div>
-            {importResult.errors.length > 0 && (
-              <ul className="import-error-list" style={{ marginTop: 8 }}>
-                {importResult.errors.map((err) => (
-                  <li key={err.paradigmName}>
-                    行{err.firstRowIndex} · 范式「{err.paradigmName}」· 原因：{err.reason}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 右侧：模板编辑器 */}
@@ -601,43 +636,18 @@ export function ParadigmPage(): JSX.Element {
 
             <div className="row-between">
               <h3>环节列表</h3>
-              <div className="row-gap">
-                <button
-                  className="primary-btn"
-                  type="button"
-                  onClick={() =>
-                    updateActiveTemplate((template) => ({
-                      ...template,
-                      stageTemplates: [...template.stageTemplates, createDefaultStage()],
-                    }))
-                  }
-                >
-                  添加环节
-                </button>
-                <button
-                  className="danger-btn"
-                  type="button"
-                  onClick={() =>
-                    confirm(
-                      {
-                        title: '删除范式模板',
-                        description: `确定要删除「${activeTemplate.templateName}」吗？此操作不可恢复。`,
-                        confirmLabel: '确认删除',
-                        danger: true,
-                      },
-                      () => {
-                        removeParadigm(activeTemplate.id)
-                        setActiveTemplateId(
-                          state.paradigms.find((p) => p.id !== activeTemplate.id)?.id ?? '',
-                        )
-                        toast.success(`范式「${activeTemplate.templateName}」已删除`)
-                      },
-                    )
-                  }
-                >
-                  删除模板
-                </button>
-              </div>
+              <button
+                className="primary-btn"
+                type="button"
+                onClick={() =>
+                  updateActiveTemplate((template) => ({
+                    ...template,
+                    stageTemplates: [...template.stageTemplates, createDefaultStage()],
+                  }))
+                }
+              >
+                添加环节
+              </button>
             </div>
 
             <div className="stage-list">
