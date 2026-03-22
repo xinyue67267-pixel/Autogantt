@@ -8,6 +8,13 @@
 
 export type StorageMode = 'local' | 'cloud' | 'hybrid'
 
+/**
+ * 主题标识。
+ * - `default`：默认主题（薰衣草紫，柔和彩色风格）
+ * - `minimal`：简约主题（Corporate Minimal，商务蓝灰风格）
+ */
+export type ThemeId = 'default' | 'minimal'
+
 export type TimelineViewMode = 'day' | 'week' | 'month' | 'year'
 
 /** 管线（Pipeline）——需求所属的业务线，带自定义颜色 */
@@ -124,6 +131,8 @@ export interface AppState {
   scheduleOverrides: RequirementSchedule[]
   storageMode: StorageMode
   userSession: UserSession
+  /** 当前激活主题；持久化至 localStorage */
+  theme: ThemeId
 }
 
 export interface ScheduleBarDragPayload {

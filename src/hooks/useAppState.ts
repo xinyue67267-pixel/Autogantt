@@ -16,6 +16,7 @@ import type {
   RequirementSchedule,
   StageLibraryItem,
   StorageMode,
+  ThemeId,
   UserSession,
 } from '../types'
 
@@ -321,6 +322,33 @@ export function useAppState() {
             map.set(v.requirementId, v)
           }
           return { ...prev, scheduleOverrides: Array.from(map.values()) }
+        })
+      },
+      /**
+       * 切换主题，并同步重置所有管线颜色与环节库颜色为新主题色板。
+       *
+       * @param {ThemeId} themeId 目标主题标识
+       * @param {string[]} pipelineColors 新主题的管线色板（6色）
+       * @param {string[]} slibColors 新主题的环节库色板（16色）
+       * @returns {void}
+       */
+      setTheme: (themeId: ThemeId, pipelineColors: string[], slibColors: string[]): void => {
+        commit((prev) => {
+          /**
+           * 循环目的：按 index % 色板长度 为每条管线分配对应主题颜色。
+           */
+          const pipelines = prev.pipelines.map((p, idx) => ({
+            ...p,
+            color: pipelineColors[idx % pipelineColors.length],
+          }))
+          /**
+           * 循环目的：按 index % 色板长度 为每条环节库条目分配对应主题颜色。
+           */
+          const stageLibrary = prev.stageLibrary.map((s, idx) => ({
+            ...s,
+            color: slibColors[idx % slibColors.length],
+          }))
+          return { ...prev, theme: themeId, pipelines, stageLibrary }
         })
       },
     }),

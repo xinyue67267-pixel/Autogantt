@@ -1549,3 +1549,168 @@ select {
 .bar-tooltip-date {
   color: #d1d5db;
 }
+
+/* ============================================================
+ * 简约主题（Corporate Minimal）
+ * 通过 [data-theme="minimal"] 覆盖默认主题的 CSS 变量与关键样式。
+ * 设计目标：商务、简约、高级感；深蓝灰主色 + 暖金棕强调色。
+ * ============================================================ */
+
+[data-theme='minimal'] {
+  /* 主色系 */
+  --color-primary: #2c5f7a;
+  --color-primary-strong: #5387a3;
+  --color-primary-soft: #eff5fa;
+  /* 强调色：暖金棕 */
+  --color-accent: #dfa874;
+  /* 中性色 */
+  --color-bg: #ffffff;
+  --color-bg-soft: #eff5fa;
+  --color-border: #c4d3e0;
+  --color-text: #1f2f3e;
+  --color-text-muted: #6c86a3;
+  /* 阴影更收敛 */
+  --shadow-card: 0 1px 4px rgba(31, 47, 62, 0.08);
+}
+
+/* 去除渐变背景，改为纯白 */
+[data-theme='minimal'] .app-shell {
+  background: #ffffff;
+}
+
+/* Header 改为浅蓝灰背景 */
+[data-theme='minimal'] .app-header {
+  background: var(--color-primary-soft);
+}
+
+/* 卡片圆角收窄：12px → 8px */
+[data-theme='minimal'] .card {
+  border-radius: 8px;
+}
+
+/* 按钮统一改为直角（border-radius: 4px），primary 改为深蓝灰填充 */
+[data-theme='minimal'] .primary-btn,
+[data-theme='minimal'] .ghost-btn,
+[data-theme='minimal'] .danger-btn,
+[data-theme='minimal'] .file-btn {
+  border-radius: 4px;
+}
+
+[data-theme='minimal'] .primary-btn {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+[data-theme='minimal'] .primary-btn:hover {
+  background: var(--color-primary-strong);
+}
+
+[data-theme='minimal'] .danger-btn {
+  background: #ffffff;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+/* 甘特条圆角收窄：8px → 4px，贴近商务 Excel 风格 */
+[data-theme='minimal'] .timeline-bar {
+  border-radius: 4px;
+}
+
+/* 选中状态左边框色 */
+[data-theme='minimal'] .menu-item.active {
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+[data-theme='minimal'] .menu-item:hover {
+  background: var(--color-primary-soft);
+}
+
+/* 设置页 Tab 选中状态 */
+[data-theme='minimal'] .settings-tab-item.active {
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* 甘特图 Header 背景 */
+[data-theme='minimal'] .timeline-header-cell {
+  background: var(--color-primary-soft);
+}
+
+/* 今日线改为主色 */
+[data-theme='minimal'] .today-line {
+  background: var(--color-primary);
+  opacity: 0.5;
+}
+
+/* ── 主题选择卡片 ── */
+.theme-card-list {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.theme-card {
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  padding: 20px;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-bg);
+}
+
+.theme-card--active {
+  border-color: var(--color-primary);
+}
+
+.theme-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-card__desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.theme-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.theme-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.theme-card__preview {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-preview-btn {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: default;
+  color: #ffffff;
+  border: 1.5px solid transparent;
+}
+
+.theme-preview-btn--ghost {
+  background: transparent;
+  border-style: solid;
+  color: inherit;
+}
+
+[data-theme='minimal'] .theme-card {
+  border-radius: 8px;
+}

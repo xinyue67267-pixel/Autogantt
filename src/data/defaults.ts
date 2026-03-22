@@ -107,4 +107,5 @@ export const DEFAULT_APP_STATE: AppState = {
     loggedIn: false,
     syncStatus: 'synced',
   },
+  theme: 'default',
 }

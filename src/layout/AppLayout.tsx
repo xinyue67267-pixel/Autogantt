@@ -5,7 +5,9 @@
  * - 固定顶部Header
  * - 全局Header导航（时间轴/开发范式/需求/设置）
  * - 承载四个业务页面与登录状态入口
+ * - 监听 state.theme 并同步写入 html[data-theme]，驱动 CSS 变量切换
  */
+import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAppStateContext } from '../context/AppStateContext'
 
@@ -39,6 +41,19 @@ function getSyncLabel(status: 'synced' | 'syncing' | 'offline_pending' | 'confli
 export function AppLayout(): JSX.Element {
   const { state, setUserSession } = useAppStateContext()
   const navigate = useNavigate()
+
+  /**
+   * 监听主题变化，将 data-theme 写入 html 元素，驱动 CSS 变量即时切换。
+   * 默认主题不写入属性（CSS 无 data-theme 时自动使用 :root 默认值）。
+   */
+  useEffect(() => {
+    const root = document.documentElement
+    if (state.theme === 'minimal') {
+      root.dataset.theme = 'minimal'
+    } else {
+      delete root.dataset.theme
+    }
+  }, [state.theme])
 
   /**
    * 执行退出登录。

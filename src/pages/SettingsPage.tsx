@@ -11,7 +11,7 @@ import { ChangeEvent, useState, type JSX } from 'react'
 import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
 import { useToast } from '../context/ToastContext'
-import type { HolidayRange, Pipeline, StageLibraryItem, StorageMode } from '../types'
+import type { HolidayRange, Pipeline, StageLibraryItem, StorageMode, ThemeId } from '../types'
 import { createId } from '../utils/id'
 import { buildXlsxBlob } from '../utils/xlsxBuilder'
 
@@ -38,6 +38,66 @@ const PRESET_COLORS: string[] = [
   '#9CA3AF', // gray-400
 ]
 
+/** 默认主题（薰衣草紫）管线色板（6色） */
+const PIPELINE_COLORS_DEFAULT: string[] = [
+  '#C4B5FD',
+  '#F9A8D4',
+  '#6EE7B7',
+  '#FCD34D',
+  '#93C5FD',
+  '#FDA4AF',
+]
+
+/** 简约主题（Corporate Minimal）管线色板（6色） */
+const PIPELINE_COLORS_MINIMAL: string[] = [
+  '#2C5F7A',
+  '#5387A3',
+  '#DFA874',
+  '#6C86A3',
+  '#C4D3E0',
+  '#1F2F3E',
+]
+
+/** 默认主题环节库色板（16色） */
+const SLIB_COLORS_DEFAULT: string[] = [
+  '#C4B5FD',
+  '#A78BFA',
+  '#7C3AED',
+  '#F9A8D4',
+  '#F472B6',
+  '#6EE7B7',
+  '#34D399',
+  '#FCD34D',
+  '#FBBF24',
+  '#FDA4AF',
+  '#F87171',
+  '#93C5FD',
+  '#94A3B8',
+  '#64748B',
+  '#6B7280',
+  '#9CA3AF',
+]
+
+/** 简约主题环节库色板（16色） */
+const SLIB_COLORS_MINIMAL: string[] = [
+  '#2C5F7A',
+  '#5387A3',
+  '#7BAECB',
+  '#EFF5FA',
+  '#C4D3E0',
+  '#DFA874',
+  '#C8916A',
+  '#6C86A3',
+  '#4A6580',
+  '#1F2F3E',
+  '#3A5068',
+  '#8FAABB',
+  '#B5C8D8',
+  '#D8E6F0',
+  '#F0F6FA',
+  '#E8EFF5',
+]
+
 /**
  * 设置页组件。
  *
@@ -58,13 +118,14 @@ export function SettingsPage(): JSX.Element {
     upsertStageLibraryItem,
     removeStageLibraryItem,
     importStageLibraryItems,
+    setTheme,
   } = useAppStateContext()
   const toast = useToast()
 
   const [newLevel, setNewLevel] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [activeTab, setActiveTab] = useState<
-    'calendar' | 'levels' | 'categories' | 'stagelibrary' | 'pipelines' | 'account'
+    'calendar' | 'levels' | 'categories' | 'stagelibrary' | 'pipelines' | 'theme' | 'account'
   >('calendar')
   const [holidayForm, setHolidayForm] = useState<Omit<HolidayRange, 'id'>>({
     name: '',
@@ -351,6 +412,7 @@ export function SettingsPage(): JSX.Element {
     { key: 'categories', label: '模板分类' },
     { key: 'stagelibrary', label: '环节库' },
     { key: 'pipelines', label: '管线管理' },
+    { key: 'theme', label: '主题' },
     { key: 'account', label: '账号与同步' },
   ]
 
@@ -864,6 +926,83 @@ export function SettingsPage(): JSX.Element {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* 主题 */}
+        {activeTab === 'theme' && (
+          <div className="card">
+            <h2>主题</h2>
+            <div className="theme-card-list">
+              {(
+                [
+                  {
+                    id: 'default' as ThemeId,
+                    label: '默认主题',
+                    desc: '薰衣草紫，柔和彩色风格',
+                    swatches: PIPELINE_COLORS_DEFAULT,
+                    pipelineColors: PIPELINE_COLORS_DEFAULT,
+                    slibColors: SLIB_COLORS_DEFAULT,
+                  },
+                  {
+                    id: 'minimal' as ThemeId,
+                    label: '简约主题',
+                    desc: 'Corporate Minimal，商务蓝灰风格',
+                    swatches: PIPELINE_COLORS_MINIMAL,
+                    pipelineColors: PIPELINE_COLORS_MINIMAL,
+                    slibColors: SLIB_COLORS_MINIMAL,
+                  },
+                ] as const
+              ).map((theme) => (
+                <div
+                  key={theme.id}
+                  className={`theme-card${state.theme === theme.id ? ' theme-card--active' : ''}`}
+                >
+                  <div className="theme-card__header">
+                    <strong>{theme.label}</strong>
+                    <span className="theme-card__desc">{theme.desc}</span>
+                  </div>
+                  <div className="theme-swatches">
+                    {theme.swatches.map((color) => (
+                      <span
+                        key={color}
+                        className="theme-swatch"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                  <div className="theme-card__preview">
+                    <span
+                      className="theme-preview-btn theme-preview-btn--primary"
+                      style={{
+                        backgroundColor: theme.pipelineColors[0],
+                        borderRadius: theme.id === 'minimal' ? '4px' : '8px',
+                      }}
+                    >
+                      主按钮
+                    </span>
+                    <span
+                      className="theme-preview-btn theme-preview-btn--ghost"
+                      style={{
+                        borderColor: theme.pipelineColors[0],
+                        color: theme.pipelineColors[0],
+                        borderRadius: theme.id === 'minimal' ? '4px' : '8px',
+                      }}
+                    >
+                      次按钮
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={state.theme === theme.id ? 'ghost-btn' : 'primary-btn'}
+                    disabled={state.theme === theme.id}
+                    onClick={() => setTheme(theme.id, theme.pipelineColors, theme.slibColors)}
+                  >
+                    {state.theme === theme.id ? '当前主题' : '应用主题'}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
