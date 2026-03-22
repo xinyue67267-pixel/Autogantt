@@ -30,7 +30,7 @@ import type {
 } from '../types'
 import { formatMonthDay, formatYear, formatYearMonth, isWorkingDay, toISODate } from '../utils/date'
 import { applyScheduleDrag, generateSchedules } from '../utils/schedule'
-import { buildGanttXlsxBlob } from '../utils/xlsxBuilder'
+import { buildGanttXlsxBlob, buildXlsxBlob } from '../utils/xlsxBuilder'
 import type { GanttCell } from '../utils/xlsxBuilder'
 import { createId } from '../utils/id'
 
@@ -436,6 +436,41 @@ export function TimelinePage(): JSX.Element {
   }, [state.paradigms, scheduleMap, stageYMap, mapDateToX, viewConfig])
 
   /**
+   * 下载固定列格式导入模板（8列：管线/需求/环节/开始日期/结束日期/级别/里程碑/日期区间）。
+   *
+   * @returns {void}
+   */
+  const handleDownloadTemplate = (): void => {
+    const headers = [
+      '管线名称',
+      '需求名称',
+      '环节名称',
+      '开始日期',
+      '结束日期',
+      '需求级别',
+      '里程碑',
+      '日期区间',
+    ]
+    const exampleRow = [
+      '主线',
+      '首页改版',
+      '开发实现',
+      '2026-05-01',
+      '2026-05-15',
+      'P1',
+      '',
+      '（或填写：2026-05-01 - 2026-05-15）',
+    ]
+    const blob = buildXlsxBlob([headers, exampleRow], [])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'AutoGantt-导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /**
    * 导出甘特矩阵 Excel（当前视图，受筛选影响）。
    *
    * 第一行为时间刻度列头，第一列为管线/需求/环节层级，
@@ -449,24 +484,36 @@ export function TimelinePage(): JSX.Element {
      * 环节所在列以对应背景色填充。
      */
     const totalCols = headerColumns.length
-    // 表头行：第一列"项目/需求"，后续为时间刻度
+    // 表头行：第一列"项目/需求"，后续为时间刻度，样式 header
     const headerRow: GanttCell[] = [
-      { text: '项目/需求', bgColor: null },
-      ...headerColumns.map((col) => ({ text: formatHeaderLabel(col.date), bgColor: null })),
+      { text: '项目/需求', bgColor: null, styleKey: 'header' },
+      ...headerColumns.map((col) => ({
+        text: formatHeaderLabel(col.date),
+        bgColor: null,
+        styleKey: 'header' as const,
+      })),
     ]
     const dataRows: GanttCell[][] = []
 
     for (const row of rows) {
       if (row.kind === 'pipeline') {
         const cells: GanttCell[] = [
-          { text: row.pipelineName, bgColor: null },
-          ...Array.from({ length: totalCols }, () => ({ text: '', bgColor: null })),
+          { text: row.pipelineName, bgColor: null, styleKey: 'pipeline' },
+          ...Array.from({ length: totalCols }, () => ({
+            text: '',
+            bgColor: null,
+            styleKey: 'pipeline' as const,
+          })),
         ]
         dataRows.push(cells)
       } else if (row.kind === 'requirement') {
         const cells: GanttCell[] = [
-          { text: `  ${row.requirementName}`, bgColor: null },
-          ...Array.from({ length: totalCols }, () => ({ text: '', bgColor: null })),
+          { text: `  ${row.requirementName}`, bgColor: null, styleKey: 'requirement' },
+          ...Array.from({ length: totalCols }, () => ({
+            text: '',
+            bgColor: null,
+            styleKey: 'requirement' as const,
+          })),
         ]
         dataRows.push(cells)
       } else {
@@ -481,7 +528,9 @@ export function TimelinePage(): JSX.Element {
         const stageStart = new Date(row.stage.startDate).getTime()
         const stageEnd = new Date(row.stage.endDate).getTime()
 
-        const cells: GanttCell[] = [{ text: `    ${row.stage.stageName}`, bgColor: null }]
+        const cells: GanttCell[] = [
+          { text: `    ${row.stage.stageName}`, bgColor: null, styleKey: 'stage' },
+        ]
         for (let i = 0; i < totalCols; i++) {
           const colDate = headerColumns[i].date
           const colStart = colDate.getTime()
@@ -491,7 +540,7 @@ export function TimelinePage(): JSX.Element {
           const colEndTime = colEnd.getTime()
           // 环节与该列时间段有重叠则填色
           const overlap = stageStart <= colEndTime && stageEnd >= colStart
-          cells.push({ text: '', bgColor: overlap ? barColor : null })
+          cells.push({ text: '', bgColor: overlap ? barColor : null, styleKey: 'stage' })
         }
         dataRows.push(cells)
       }
@@ -585,7 +634,9 @@ export function TimelinePage(): JSX.Element {
   }
 
   /**
-   * 固定列格式解析（A=管线/B=需求/C=环节/D=开始/E=结束/F=级别/G=里程碑）。
+   * 固定列格式解析（A=管线/B=需求/C=环节/D=开始/E=结束/F=级别/G=里程碑/H=日期区间）。
+   *
+   * 日期优先级：D/E 列均有值时使用 D/E；两者均为空时解析 H 列（格式 YYYY-MM-DD - YYYY-MM-DD）。
    *
    * @param {string[][]} aoa sheet 数据（包含表头行）
    * @returns {void}
@@ -623,10 +674,11 @@ export function TimelinePage(): JSX.Element {
       const pipelineName = String(row[0] ?? '').trim()
       const reqName = String(row[1] ?? '').trim()
       const stageName = String(row[2] ?? '').trim()
-      const startDate = String(row[3] ?? '').trim()
-      const endDate = String(row[4] ?? '').trim()
+      const rawStart = String(row[3] ?? '').trim()
+      const rawEnd = String(row[4] ?? '').trim()
       const levelId = String(row[5] ?? '').trim() || 'P2'
       const milestoneRaw = String(row[6] ?? '').trim()
+      const rawDateRange = String(row[7] ?? '').trim()
       const isMilestone = (
         ['L0', 'L0.5', 'L1', 'L2'].includes(milestoneRaw) ? milestoneRaw : ''
       ) as MilestoneLevel | ''
@@ -644,16 +696,57 @@ export function TimelinePage(): JSX.Element {
         reqGroups.delete(reqName)
         continue
       }
-      if (!isValidDate(startDate)) {
-        errorRows.push({ rowIndex, reason: `D列开始日期格式非法，应为 YYYY-MM-DD` })
+
+      /** 解析起止日期：D/E 优先，均空时解析 H 列日期区间 */
+      let startDate: string
+      let endDate: string
+
+      if (rawStart || rawEnd) {
+        // D/E 列至少有一个有值，走 D/E 校验
+        if (!isValidDate(rawStart)) {
+          errorRows.push({ rowIndex, reason: `D列开始日期格式非法，应为 YYYY-MM-DD` })
+          reqGroups.delete(reqName)
+          continue
+        }
+        if (!isValidDate(rawEnd)) {
+          errorRows.push({ rowIndex, reason: `E列结束日期格式非法，应为 YYYY-MM-DD` })
+          reqGroups.delete(reqName)
+          continue
+        }
+        startDate = rawStart
+        endDate = rawEnd
+      } else if (rawDateRange) {
+        // D/E 均为空，解析 H 列日期区间（格式：YYYY-MM-DD - YYYY-MM-DD）
+        const rangeMatch = rawDateRange.match(/^(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2})$/)
+        if (!rangeMatch) {
+          errorRows.push({
+            rowIndex,
+            reason: `H列日期区间格式非法，应为 YYYY-MM-DD - YYYY-MM-DD`,
+          })
+          reqGroups.delete(reqName)
+          continue
+        }
+        const [, rangeStart, rangeEnd] = rangeMatch
+        if (!isValidDate(rangeStart) || !isValidDate(rangeEnd)) {
+          errorRows.push({
+            rowIndex,
+            reason: `H列日期区间包含非法日期，应为 YYYY-MM-DD - YYYY-MM-DD`,
+          })
+          reqGroups.delete(reqName)
+          continue
+        }
+        startDate = rangeStart
+        endDate = rangeEnd
+      } else {
+        // D/E/H 均为空
+        errorRows.push({
+          rowIndex,
+          reason: `开始/结束日期（D/E列）或日期区间（H列）至少填写一项`,
+        })
         reqGroups.delete(reqName)
         continue
       }
-      if (!isValidDate(endDate)) {
-        errorRows.push({ rowIndex, reason: `E列结束日期格式非法，应为 YYYY-MM-DD` })
-        reqGroups.delete(reqName)
-        continue
-      }
+
       if (new Date(startDate) > new Date(endDate)) {
         errorRows.push({ rowIndex, reason: `开始日期晚于结束日期` })
         reqGroups.delete(reqName)
@@ -1242,6 +1335,9 @@ export function TimelinePage(): JSX.Element {
               onChange={handleImport}
             />
           </label>
+          <button className="ghost-btn" type="button" onClick={handleDownloadTemplate}>
+            ↓ 下载导入模板
+          </button>
         </div>
       </div>
 

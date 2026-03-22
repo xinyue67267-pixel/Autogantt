@@ -286,10 +286,13 @@ export function buildXlsxBlob(rows: CellValue[][], dropdowns: DropdownValidation
  *
  * @property {string} text 单元格文字（空字符串代表无文字）
  * @property {string | null} bgColor 背景色（CSS hex，如 "#C4B5FD"；null 代表无填充）
+ * @property {'header' | 'pipeline' | 'requirement' | 'stage'} [styleKey] 行类型样式键；
+ *   header/pipeline: 22pt 加粗居中；requirement: 20pt 加粗居中 + 上边框；stage: 18pt 居中不加粗
  */
 export interface GanttCell {
   text: string
   bgColor: string | null
+  styleKey?: 'header' | 'pipeline' | 'requirement' | 'stage'
 }
 
 /**
@@ -314,19 +317,28 @@ function toArgb(cssHex: string): string {
 /**
  * 构建 styles.xml，收集所有用到的背景色，生成对应 xf 样式索引。
  *
+ * xf 索引分配：
+ *   0             = 默认样式（无填充，无特殊格式）
+ *   1 .. N        = 背景色填充样式（颜色顺序与 uniqueColors 一致）
+ *   N+1           = header/pipeline 行（22pt 加粗居中，无填充）
+ *   N+2           = requirement 行（20pt 加粗居中，无填充）
+ *   N+3           = requirement 行带上边框（20pt 加粗居中，topBorder 加粗）
+ *   N+4           = stage 行（18pt 不加粗居中，无填充）
+ *
  * @param {string[]} uniqueColors 去重后的 CSS hex 颜色列表（不含 null）
- * @returns {{ xml: string; colorIndexMap: Map<string, number> }}
- *   xml: styles.xml 内容；colorIndexMap: cssHex → xf 索引（0 为默认无填充样式）
+ * @returns {{ xml: string; colorIndexMap: Map<string, number>; styleKeyBase: number }}
+ *   xml: styles.xml 内容；colorIndexMap: cssHex → xf 索引；styleKeyBase: 行样式起始索引（=N+1）
  */
 function buildStylesXml(uniqueColors: string[]): {
   xml: string
   colorIndexMap: Map<string, number>
+  styleKeyBase: number
 } {
-  // xf 0 = 默认样式（无填充），xf 1..N = 各颜色
   const colorIndexMap = new Map<string, number>()
   uniqueColors.forEach((color, i) => {
     colorIndexMap.set(color, i + 1)
   })
+  const styleKeyBase = uniqueColors.length + 1
 
   // fills: fill 0 = none（规范要求）, fill 1 = gray125（规范要求）, fill 2..N+1 = 自定义颜色
   const fillsXml = [
@@ -341,35 +353,62 @@ function buildStylesXml(uniqueColors: string[]): {
     ),
   ].join('')
 
-  // fonts: 至少一个默认 font（规范要求）
-  const fontsXml = `<font><sz val="11"/><name val="Calibri"/></font>`
+  // fonts: 0=默认11pt, 1=22pt加粗, 2=20pt加粗, 3=18pt不加粗
+  const fontsXml = [
+    `<font><sz val="11"/><name val="Calibri"/></font>`,
+    `<font><b/><sz val="22"/><name val="Calibri"/></font>`,
+    `<font><b/><sz val="20"/><name val="Calibri"/></font>`,
+    `<font><sz val="18"/><name val="Calibri"/></font>`,
+  ].join('')
 
-  // borders: 至少一个空 border（规范要求）
-  const bordersXml = `<border><left/><right/><top/><bottom/><diagonal/></border>`
+  // borders: 0=空边框（规范要求）, 1=上边框加粗（需求行顶部分隔线）
+  const bordersXml = [
+    `<border><left/><right/><top/><bottom/><diagonal/></border>`,
+    `<border><left/><right/><top style="medium"/><bottom/><diagonal/></border>`,
+  ].join('')
 
   // cellStyleXfs: 至少一个默认 xf（规范要求）
   const cellStyleXfsXml = `<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>`
 
-  // cellXfs: xf 0 = 无填充, xf 1..N = 各颜色填充（fillId = 2 + colorIndex）
+  // alignment 居中属性片段
+  const centerAlign = `<alignment horizontal="center"/>`
+
+  // cellXfs:
+  //   0         = 默认（无填充无格式）
+  //   1..N      = 背景色填充（fillId=2+i）
+  //   N+1       = header/pipeline（font1=22pt加粗，居中）
+  //   N+2       = requirement（font2=20pt加粗，居中）
+  //   N+3       = requirement + 上边框（font2=20pt加粗，居中，border1）
+  //   N+4       = stage（font3=18pt，居中）
   const cellXfsXml = [
     `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`,
     ...uniqueColors.map(
       (_, i) =>
         `<xf numFmtId="0" fontId="0" fillId="${i + 2}" borderId="0" xfId="0" applyFill="1"/>`,
     ),
+    // N+1: header/pipeline
+    `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${centerAlign}</xf>`,
+    // N+2: requirement
+    `<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${centerAlign}</xf>`,
+    // N+3: requirement + topBorder
+    `<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">${centerAlign}</xf>`,
+    // N+4: stage
+    `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${centerAlign}</xf>`,
   ].join('')
+
+  const totalXfs = uniqueColors.length + 5
 
   const xml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<fonts count="1">${fontsXml}</fonts>` +
+    `<fonts count="4">${fontsXml}</fonts>` +
     `<fills count="${uniqueColors.length + 2}">${fillsXml}</fills>` +
-    `<borders count="1">${bordersXml}</borders>` +
+    `<borders count="2">${bordersXml}</borders>` +
     `<cellStyleXfs count="1">${cellStyleXfsXml}</cellStyleXfs>` +
-    `<cellXfs count="${uniqueColors.length + 1}">${cellXfsXml}</cellXfs>` +
+    `<cellXfs count="${totalXfs}">${cellXfsXml}</cellXfs>` +
     `</styleSheet>`
 
-  return { xml, colorIndexMap }
+  return { xml, colorIndexMap, styleKeyBase }
 }
 
 /**
@@ -377,18 +416,52 @@ function buildStylesXml(uniqueColors: string[]): {
  *
  * @param {GanttCell[][]} rows 行列数据
  * @param {Map<string, number>} colorIndexMap cssHex → xf 样式索引
+ * @param {number} styleKeyBase 行类型样式的起始 xf 索引（header/pipeline=base, req=base+1, req+border=base+2, stage=base+3）
  * @returns {string} sheet1.xml 内容
  */
-function buildGanttSheetXml(rows: GanttCell[][], colorIndexMap: Map<string, number>): string {
+function buildGanttSheetXml(
+  rows: GanttCell[][],
+  colorIndexMap: Map<string, number>,
+  styleKeyBase: number,
+): string {
+  /**
+   * 将 styleKey 映射到 xf 索引偏移。
+   * header/pipeline → styleKeyBase+0（22pt 加粗居中）
+   * requirement     → styleKeyBase+1（20pt 加粗居中）或 styleKeyBase+2（含上边框）
+   * stage           → styleKeyBase+3（18pt 居中）
+   *
+   * 需求行（requirement）首次出现时加上边框（每个需求块顶部），
+   * 通过检测同行第一列 styleKey==='requirement' 来判断是否加边框。
+   */
   const sheetDataRows = rows
     .map((row, rIdx) => {
+      // 取该行第一个单元格的 styleKey 决定是否需要上边框
+      const rowStyleKey = row[0]?.styleKey
+      const useTopBorder = rowStyleKey === 'requirement'
+
       const cells = row
         .map((cell, cIdx) => {
           const addr = `${colLetter(cIdx)}${rIdx + 1}`
-          const styleIdx = cell.bgColor ? (colorIndexMap.get(cell.bgColor) ?? 0) : 0
+
+          // 确定样式索引：背景色优先，其次行类型样式
+          let styleIdx = cell.bgColor ? (colorIndexMap.get(cell.bgColor) ?? 0) : 0
+          if (styleIdx === 0 && cell.styleKey) {
+            switch (cell.styleKey) {
+              case 'header':
+              case 'pipeline':
+                styleIdx = styleKeyBase
+                break
+              case 'requirement':
+                styleIdx = useTopBorder ? styleKeyBase + 2 : styleKeyBase + 1
+                break
+              case 'stage':
+                styleIdx = styleKeyBase + 3
+                break
+            }
+          }
+
           const sAttr = styleIdx > 0 ? ` s="${styleIdx}"` : ''
           if (!cell.text) {
-            // 无文字但有背景色时仍需输出空单元格以应用样式
             return styleIdx > 0 ? `<c r="${addr}"${sAttr}/>` : ''
           }
           return `<c r="${addr}" t="inlineStr"${sAttr}><is><t>${escXml(cell.text)}</t></is></c>`
@@ -423,8 +496,8 @@ export function buildGanttXlsxBlob(rows: GanttCell[][], sheetName: string): Blob
   }
   const uniqueColors = Array.from(colorSet)
 
-  const { xml: stylesXml, colorIndexMap } = buildStylesXml(uniqueColors)
-  const sheetXml = buildGanttSheetXml(rows, colorIndexMap)
+  const { xml: stylesXml, colorIndexMap, styleKeyBase } = buildStylesXml(uniqueColors)
+  const sheetXml = buildGanttSheetXml(rows, colorIndexMap, styleKeyBase)
 
   const CONTENT_TYPES_WITH_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
