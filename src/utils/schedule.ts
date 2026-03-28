@@ -212,6 +212,86 @@ export function generateSchedules(
 }
 
 /**
+ * 拖拽联动重算：以变更环节为锚点，按模板 FS 依赖链向后推算同需求内所有关联环节。
+ *
+ * @param {StageInstance[]} currentStages 当前排期（含所有环节）
+ * @param {string} changedStageId 被拖拽环节 ID
+ * @param {string} newStart 新开始日期（YYYY-MM-DD）
+ * @param {string} newEnd 新结束日期（YYYY-MM-DD）
+ * @param {ParadigmTemplate} template 范式模板（提供依赖关系）
+ * @param {HolidayRange[]} holidays 工作日历
+ * @returns {StageInstance[]} 重算后的完整环节列表
+ */
+export function cascadeReschedule(
+  currentStages: StageInstance[],
+  changedStageId: string,
+  newStart: string,
+  newEnd: string,
+  template: ParadigmTemplate,
+  holidays: HolidayRange[],
+): StageInstance[] {
+  /**
+   * 以当前排期为基础构建可变映射，先把变更环节的新日期写入。
+   */
+  const stageMap = new Map<string, StageInstance>(currentStages.map((s) => [s.stageId, { ...s }]))
+
+  const changed = stageMap.get(changedStageId)
+  /**
+   * 条件目的：被拖拽环节不存在时直接返回原排期，防止引用空对象。
+   */
+  if (!changed) {
+    return currentStages
+  }
+  changed.startDate = newStart
+  changed.endDate = newEnd
+  stageMap.set(changedStageId, changed)
+
+  /**
+   * 按模板顺序遍历，跳过被拖拽环节本身，对有依赖关系的后置环节按 FS 规则重算。
+   * 循环目的：保证依赖链从前到后依次传播，避免乱序导致计算错误。
+   */
+  for (const stageTemplate of template.stageTemplates) {
+    if (stageTemplate.id === changedStageId) {
+      continue
+    }
+
+    /**
+     * 条件目的：无依赖的环节不参与联动，保持原排期不变。
+     */
+    if (stageTemplate.dependencies.length === 0) {
+      continue
+    }
+
+    const candidate = getDependencyStartCandidate(stageTemplate, stageMap, holidays)
+    if (!candidate) {
+      continue
+    }
+
+    const current = stageMap.get(stageTemplate.id)
+    /**
+     * 条件目的：环节实例缺失时跳过，不影响其他环节重算。
+     */
+    if (!current) {
+      continue
+    }
+
+    /**
+     * 条件目的：仅当依赖触发时间晚于当前开始时间时才顺延，避免无谓移动。
+     */
+    if (candidate > new Date(current.startDate)) {
+      const currentStart = new Date(current.startDate)
+      const currentEnd = new Date(current.endDate)
+      const durationDays = diffDays(currentStart, currentEnd)
+      current.startDate = toISODate(candidate)
+      current.endDate = toISODate(addWorkingDays(candidate, durationDays, holidays))
+      stageMap.set(stageTemplate.id, current)
+    }
+  }
+
+  return template.stageTemplates.map((s) => stageMap.get(s.id)).filter(Boolean) as StageInstance[]
+}
+
+/**
  * 在时间轴拖拽后应用环节变更。
  *
  * @param {RequirementSchedule[]} schedules 原始排期

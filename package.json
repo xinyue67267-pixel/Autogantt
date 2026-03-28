@@ -1,8 +1,9 @@
 {
   "name": "autogantt",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "private": true,
   "type": "module",
+  "main": "electron-main.js",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "node ./node_modules/vite/bin/vite.js build",
@@ -12,7 +13,21 @@
     "format": "node ./node_modules/prettier/bin/prettier.cjs . --write",
     "typecheck": "node ./node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "check": "node ./scripts/check.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "electron:build": "node ./node_modules/vite/bin/vite.js build && node ./node_modules/electron-builder/cli.js --win --x64"
+  },
+  "build": {
+    "appId": "com.autogantt.app",
+    "productName": "AutoGantt",
+    "forceCodeSigning": false,
+    "files": [
+      "dist/**/*",
+      "electron-main.js"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "public/icon.ico"
+    }
   },
   "keywords": [],
   "author": "",
@@ -33,6 +48,8 @@
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react": "^7.37.2",

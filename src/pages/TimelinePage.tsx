@@ -21,6 +21,7 @@ import {
 } from 'react'
 import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
+import { useToast } from '../context/ToastContext'
 import type {
   MilestoneLevel,
   RequirementSchedule,
@@ -29,7 +30,7 @@ import type {
   TimelineViewMode,
 } from '../types'
 import { formatMonthDay, formatYear, formatYearMonth, isWorkingDay, toISODate } from '../utils/date'
-import { applyScheduleDrag, generateSchedules } from '../utils/schedule'
+import { applyScheduleDrag, cascadeReschedule, generateSchedules } from '../utils/schedule'
 import { buildGanttXlsxBlob, buildXlsxBlob } from '../utils/xlsxBuilder'
 import type { GanttCell } from '../utils/xlsxBuilder'
 import { createId } from '../utils/id'
@@ -102,6 +103,16 @@ interface PendingDrag {
   schedules: RequirementSchedule[]
   /** 依赖冲突描述列表（空表示无冲突） */
   conflicts: string[]
+  /** 被拖拽的需求 ID */
+  requirementId: string
+  /** 被拖拽的环节 ID */
+  stageId: string
+  /** 被拖拽的环节名称 */
+  stageName: string
+  /** 拖拽后新开始日期 */
+  newStart: string
+  /** 拖拽后新结束日期 */
+  newEnd: string
 }
 
 /**
@@ -196,6 +207,7 @@ export function TimelinePage(): JSX.Element {
     importStageLibraryItems,
     importScheduleOverrides,
   } = useAppStateContext()
+  const toast = useToast()
   const [viewMode, setViewMode] = useState<TimelineViewMode>('week')
   const [year, setYear] = useState(new Date().getFullYear())
   const [selectedStageName, setSelectedStageName] = useState('全部环节')
@@ -1238,7 +1250,19 @@ export function TimelinePage(): JSX.Element {
     }
 
     const conflicts = checkDependencyConflicts(overrides, state)
-    setPendingDrag({ schedules: overrides, conflicts })
+
+    const draggedSchedule = overrides.find((s) => s.requirementId === dragState.requirementId)
+    const draggedStage = draggedSchedule?.stages.find((s) => s.stageId === dragState.stageId)
+
+    setPendingDrag({
+      schedules: overrides,
+      conflicts,
+      requirementId: dragState.requirementId,
+      stageId: dragState.stageId,
+      stageName: draggedStage?.stageName ?? '',
+      newStart: draggedStage?.startDate ?? '',
+      newEnd: draggedStage?.endDate ?? '',
+    })
     setDragState(null)
   }, [dragState, overrides, state])
 
@@ -1249,6 +1273,59 @@ export function TimelinePage(): JSX.Element {
    */
   const handleConfirmDrag = (): void => {
     /** overrides 已经是最新排期，直接保留 */
+    setPendingDrag(null)
+  }
+
+  /**
+   * 用户选择"保存并联动调整"——按模板依赖关系重算同需求内所有关联环节。
+   *
+   * @returns {void}
+   */
+  const handleCascadeSave = (): void => {
+    if (!pendingDrag) return
+
+    const req = state.requirements.find((r) => r.id === pendingDrag.requirementId)
+    const template = state.paradigms.find((p) => p.id === req?.templateId)
+
+    /**
+     * 条件目的：范式或需求缺失时降级为仅保存当前环节，不中断用户流程。
+     */
+    if (!req || !template) {
+      setPendingDrag(null)
+      return
+    }
+
+    const currentSchedule = pendingDrag.schedules.find(
+      (s) => s.requirementId === pendingDrag.requirementId,
+    )
+    if (!currentSchedule) {
+      setPendingDrag(null)
+      return
+    }
+
+    const cascadedStages = cascadeReschedule(
+      currentSchedule.stages,
+      pendingDrag.stageId,
+      pendingDrag.newStart,
+      pendingDrag.newEnd,
+      template,
+      state.holidays,
+    )
+
+    /**
+     * 条件目的：检测重算后是否存在超出 DDL 的环节，若有则提示风险。
+     */
+    if (req.projectDDL) {
+      const overDDL = cascadedStages.some((s) => s.endDate > req.projectDDL!)
+      if (overDDL) {
+        toast.warning('联动调整后部分环节超出需求 DDL，请注意风险')
+      }
+    }
+
+    const nextOverrides = pendingDrag.schedules.map((s) =>
+      s.requirementId === pendingDrag.requirementId ? { ...s, stages: cascadedStages } : s,
+    )
+    setOverrides(nextOverrides)
     setPendingDrag(null)
   }
 
@@ -1715,11 +1792,17 @@ export function TimelinePage(): JSX.Element {
       {/* 拖拽保存确认弹窗 */}
       {pendingDrag && (
         <div className="modal-mask">
-          <div className="modal-box">
-            <h3 className="modal-title">确认保存排期调整</h3>
-            {pendingDrag.conflicts.length > 0 ? (
+          <div className="modal-box drag-confirm-modal">
+            <h3 className="modal-title">确认排期变更</h3>
+            <p className="drag-confirm-desc">
+              <strong>{pendingDrag.stageName}</strong>
+              {pendingDrag.newStart && pendingDrag.newEnd
+                ? `：${pendingDrag.newStart} ~ ${pendingDrag.newEnd}`
+                : ''}
+            </p>
+            {pendingDrag.conflicts.length > 0 && (
               <div className="modal-conflicts">
-                <p className="modal-conflicts-label">检测到依赖冲突，保存后以下约束将被违反：</p>
+                <p className="modal-conflicts-label">注意：存在依赖关系变化：</p>
                 <ul>
                   {pendingDrag.conflicts.map((c, i) => (
                     <li key={i} className="conflict-item">
@@ -1728,19 +1811,16 @@ export function TimelinePage(): JSX.Element {
                   ))}
                 </ul>
               </div>
-            ) : (
-              <p className="modal-ok-msg">依赖关系校验通过，可以安全保存。</p>
             )}
-            <div className="modal-actions">
+            <div className="modal-actions drag-confirm-actions">
               <button className="ghost-btn" type="button" onClick={handleCancelDrag}>
-                取消（恢复原排期）
+                取消
               </button>
-              <button
-                className={pendingDrag.conflicts.length > 0 ? 'danger-btn' : 'primary-btn'}
-                type="button"
-                onClick={handleConfirmDrag}
-              >
-                {pendingDrag.conflicts.length > 0 ? '忽略冲突并保存' : '保存'}
+              <button className="ghost-btn" type="button" onClick={handleConfirmDrag}>
+                仅保存当前环节
+              </button>
+              <button className="primary-btn" type="button" autoFocus onClick={handleCascadeSave}>
+                保存并联动调整
               </button>
             </div>
           </div>

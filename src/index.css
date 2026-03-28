@@ -1714,3 +1714,27 @@ select {
 [data-theme='minimal'] .theme-card {
   border-radius: 8px;
 }
+
+/* ── 拖拽排期三选项确认弹窗 ── */
+.drag-confirm-modal {
+  min-width: 360px;
+  max-width: 480px;
+}
+
+.drag-confirm-desc {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.drag-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+[data-theme='minimal'] .drag-confirm-modal {
+  border-radius: 8px;
+}
