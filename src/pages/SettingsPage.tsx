@@ -150,50 +150,7 @@ function CalendarGroups({
 
   return (
     <div className="cal-root">
-      {/* 分组列表 */}
-      {grouped.map(([yr, items]) => {
-        const isCollapsed = collapsed.has(yr)
-        return (
-          <div key={yr} className="cal-year-group">
-            <button
-              type="button"
-              className="cal-year-header"
-              onClick={() => toggleYear(yr)}
-              aria-expanded={!isCollapsed}
-            >
-              <span className="cal-year-label">{yr}</span>
-              <span className="cal-year-count">{items.length} 条</span>
-              <span className={`cal-chevron${isCollapsed ? '' : ' cal-chevron--open'}`}>›</span>
-            </button>
-            {!isCollapsed && (
-              <div className="cal-pill-wrap">
-                {items.map((h) => (
-                  <span
-                    key={h.id}
-                    className={`cal-pill cal-pill--${h.type}`}
-                    title={`${h.name}  ${h.startDate} ~ ${h.endDate}`}
-                  >
-                    <span className="cal-pill-dot" />
-                    <span className="cal-pill-name">{h.name}</span>
-                    <span className="cal-pill-date">{formatRange(h.startDate, h.endDate)}</span>
-                    <button
-                      type="button"
-                      className="cal-pill-remove"
-                      aria-label={`删除 ${h.name}`}
-                      onClick={() => onRemove(h.id)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
-      {holidays.length === 0 && <p className="cal-empty">暂无日历区间，请在下方新增。</p>}
-
-      {/* 新增表单 */}
+      {/* 新增表单（固定顶部） */}
       <div className="cal-add-form">
         <input
           className="cal-add-name"
@@ -230,6 +187,51 @@ function CalendarGroups({
         <button className="primary-btn" type="button" onClick={onAdd}>
           + 新增
         </button>
+      </div>
+
+      {/* 可滚动分组列表 */}
+      <div className="cal-list-scroll">
+        {grouped.map(([yr, items]) => {
+          const isCollapsed = collapsed.has(yr)
+          return (
+            <div key={yr} className="cal-year-group">
+              <button
+                type="button"
+                className="cal-year-header"
+                onClick={() => toggleYear(yr)}
+                aria-expanded={!isCollapsed}
+              >
+                <span className="cal-year-label">{yr}</span>
+                <span className="cal-year-count">{items.length} 条</span>
+                <span className={`cal-chevron${isCollapsed ? '' : ' cal-chevron--open'}`}>›</span>
+              </button>
+              {!isCollapsed && (
+                <div className="cal-pill-wrap">
+                  {items.map((h) => (
+                    <span
+                      key={h.id}
+                      className={`cal-pill cal-pill--${h.type}`}
+                      title={`${h.name}  ${h.startDate} ~ ${h.endDate}`}
+                    >
+                      <span className="cal-pill-dot" />
+                      <span className="cal-pill-name">{h.name}</span>
+                      <span className="cal-pill-date">{formatRange(h.startDate, h.endDate)}</span>
+                      <button
+                        type="button"
+                        className="cal-pill-remove"
+                        aria-label={`删除 ${h.name}`}
+                        onClick={() => onRemove(h.id)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {holidays.length === 0 && <p className="cal-empty">暂无日历区间，请在上方新增。</p>}
       </div>
     </div>
   )
@@ -581,7 +583,7 @@ export function SettingsPage(): JSX.Element {
       <div className="settings-content">
         {/* 工作日历 */}
         {activeTab === 'calendar' && (
-          <div className="card">
+          <div className="card card--calendar">
             <h2>工作日历</h2>
             <CalendarGroups
               holidays={state.holidays}

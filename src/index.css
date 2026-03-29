@@ -1799,10 +1799,35 @@ select {
 }
 
 /* ── 工作日历分组视图 ── */
+/* 让 card 撑满右侧内容区，以便内部列表独立滚动 */
+.card--calendar {
+  display: flex;
+  flex-direction: column;
+  /* settings-content 高度固定，card 填满剩余空间 */
+  height: calc(100vh - 56px - 32px - 32px); /* viewport - header - page padding - card margin */
+  overflow: hidden;
+}
+.card--calendar h2 {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
 .cal-root {
   display: flex;
   flex-direction: column;
+  gap: 0;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.cal-list-scroll {
+  flex: 1 1 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+  padding-top: 12px;
+  min-height: 0;
 }
 
 .cal-year-group {
@@ -1941,15 +1966,15 @@ select {
   padding: 8px 0;
 }
 
-/* 新增表单 */
+/* 新增表单（固定顶部） */
 .cal-add-form {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .cal-add-name {
