@@ -30,7 +30,12 @@ import type {
   TimelineViewMode,
 } from '../types'
 import { formatMonthDay, formatYear, formatYearMonth, isWorkingDay, toISODate } from '../utils/date'
-import { applyScheduleDrag, cascadeReschedule, generateSchedules } from '../utils/schedule'
+import {
+  applyScheduleDrag,
+  cascadeReschedule,
+  cascadeShift,
+  generateSchedules,
+} from '../utils/schedule'
 import { buildGanttXlsxBlob, buildXlsxBlob } from '../utils/xlsxBuilder'
 import type { GanttCell } from '../utils/xlsxBuilder'
 import { createId } from '../utils/id'
@@ -113,6 +118,8 @@ interface PendingDrag {
   newStart: string
   /** 拖拽后新结束日期 */
   newEnd: string
+  /** 拖拽前原始开始日期（用于计算 delta） */
+  originalStart: string
 }
 
 /**
@@ -1254,6 +1261,9 @@ export function TimelinePage(): JSX.Element {
     const draggedSchedule = overrides.find((s) => s.requirementId === dragState.requirementId)
     const draggedStage = draggedSchedule?.stages.find((s) => s.stageId === dragState.stageId)
 
+    const originalSchedule = scheduleMap.get(dragState.requirementId)
+    const originalStage = originalSchedule?.stages.find((s) => s.stageId === dragState.stageId)
+
     setPendingDrag({
       schedules: overrides,
       conflicts,
@@ -1262,6 +1272,7 @@ export function TimelinePage(): JSX.Element {
       stageName: draggedStage?.stageName ?? '',
       newStart: draggedStage?.startDate ?? '',
       newEnd: draggedStage?.endDate ?? '',
+      originalStart: originalStage?.startDate ?? draggedStage?.startDate ?? '',
     })
     setDragState(null)
   }, [dragState, overrides, state])
@@ -1324,6 +1335,54 @@ export function TimelinePage(): JSX.Element {
 
     const nextOverrides = pendingDrag.schedules.map((s) =>
       s.requirementId === pendingDrag.requirementId ? { ...s, stages: cascadedStages } : s,
+    )
+    setOverrides(nextOverrides)
+    setPendingDrag(null)
+  }
+
+  /**
+   * 用户选择「联动调整（整体平移）」——将有依赖关系的后置环节整体平移相同工作日 delta。
+   *
+   * @returns {void}
+   */
+  const handleShiftSave = (): void => {
+    if (!pendingDrag) return
+
+    const req = state.requirements.find((r) => r.id === pendingDrag.requirementId)
+    const template = state.paradigms.find((p) => p.id === req?.templateId)
+
+    if (!req || !template) {
+      setPendingDrag(null)
+      return
+    }
+
+    const currentSchedule = pendingDrag.schedules.find(
+      (s) => s.requirementId === pendingDrag.requirementId,
+    )
+    if (!currentSchedule) {
+      setPendingDrag(null)
+      return
+    }
+
+    const shiftedStages = cascadeShift(
+      currentSchedule.stages,
+      pendingDrag.stageId,
+      pendingDrag.originalStart,
+      pendingDrag.newStart,
+      pendingDrag.newEnd,
+      template,
+      state.holidays,
+    )
+
+    if (req.projectDDL) {
+      const overDDL = shiftedStages.some((s) => s.endDate > req.projectDDL!)
+      if (overDDL) {
+        toast.warning('联动调整后部分环节超出需求 DDL，请注意风险')
+      }
+    }
+
+    const nextOverrides = pendingDrag.schedules.map((s) =>
+      s.requirementId === pendingDrag.requirementId ? { ...s, stages: shiftedStages } : s,
     )
     setOverrides(nextOverrides)
     setPendingDrag(null)
@@ -1819,8 +1878,11 @@ export function TimelinePage(): JSX.Element {
               <button className="ghost-btn" type="button" onClick={handleConfirmDrag}>
                 仅保存当前环节
               </button>
-              <button className="primary-btn" type="button" autoFocus onClick={handleCascadeSave}>
-                保存并联动调整
+              <button className="ghost-btn" type="button" onClick={handleCascadeSave}>
+                联动调整（按依赖重算）
+              </button>
+              <button className="primary-btn" type="button" autoFocus onClick={handleShiftSave}>
+                联动调整（整体平移）
               </button>
             </div>
           </div>

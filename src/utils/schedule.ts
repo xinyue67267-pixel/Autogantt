@@ -276,16 +276,93 @@ export function cascadeReschedule(
     }
 
     /**
-     * 条件目的：仅当依赖触发时间晚于当前开始时间时才顺延，避免无谓移动。
+     * 条件目的：依赖触发时间与当前开始时间不同时更新排期，双向生效（前移/后移均重算）。
      */
-    if (candidate > new Date(current.startDate)) {
+    const candidateStr = toISODate(candidate)
+    if (candidateStr !== current.startDate) {
       const currentStart = new Date(current.startDate)
       const currentEnd = new Date(current.endDate)
       const durationDays = diffDays(currentStart, currentEnd)
-      current.startDate = toISODate(candidate)
+      current.startDate = candidateStr
       current.endDate = toISODate(addWorkingDays(candidate, durationDays, holidays))
       stageMap.set(stageTemplate.id, current)
     }
+  }
+
+  return template.stageTemplates.map((s) => stageMap.get(s.id)).filter(Boolean) as StageInstance[]
+}
+
+/**
+ * 拖拽联动重算（整体平移）：将同需求内所有有依赖关系的环节整体平移相同工作日天数。
+ *
+ * @param {StageInstance[]} currentStages 当前排期（含所有环节）
+ * @param {string} changedStageId 被拖拽环节 ID
+ * @param {string} originalStart 拖拽前开始日期（YYYY-MM-DD）
+ * @param {string} newStart 新开始日期（YYYY-MM-DD）
+ * @param {string} newEnd 新结束日期（YYYY-MM-DD）
+ * @param {ParadigmTemplate} template 范式模板（提供依赖关系）
+ * @param {HolidayRange[]} holidays 工作日历
+ * @returns {StageInstance[]} 重算后的完整环节列表
+ */
+export function cascadeShift(
+  currentStages: StageInstance[],
+  changedStageId: string,
+  originalStart: string,
+  newStart: string,
+  newEnd: string,
+  template: ParadigmTemplate,
+  holidays: HolidayRange[],
+): StageInstance[] {
+  const stageMap = new Map<string, StageInstance>(currentStages.map((s) => [s.stageId, { ...s }]))
+
+  const changed = stageMap.get(changedStageId)
+  /**
+   * 条件目的：被拖拽环节不存在时直接返回原排期，防止引用空对象。
+   */
+  if (!changed) {
+    return currentStages
+  }
+  changed.startDate = newStart
+  changed.endDate = newEnd
+  stageMap.set(changedStageId, changed)
+
+  const deltaDays = diffDays(new Date(originalStart), new Date(newStart))
+
+  /**
+   * 条件目的：delta 为 0 时无需平移。
+   */
+  if (deltaDays === 0) {
+    return template.stageTemplates.map((s) => stageMap.get(s.id)).filter(Boolean) as StageInstance[]
+  }
+
+  /**
+   * 循环目的：对有依赖关系的所有非锚点环节整体平移相同 delta 工作日，保持相对间距。
+   */
+  for (const stageTemplate of template.stageTemplates) {
+    if (stageTemplate.id === changedStageId) {
+      continue
+    }
+
+    /**
+     * 条件目的：无依赖的环节不参与联动，保持原排期不变。
+     */
+    if (stageTemplate.dependencies.length === 0) {
+      continue
+    }
+
+    const current = stageMap.get(stageTemplate.id)
+    /**
+     * 条件目的：环节实例缺失时跳过，不影响其他环节重算。
+     */
+    if (!current) {
+      continue
+    }
+
+    const currentStart = new Date(current.startDate)
+    const currentEnd = new Date(current.endDate)
+    current.startDate = toISODate(addWorkingDays(currentStart, deltaDays, holidays))
+    current.endDate = toISODate(addWorkingDays(currentEnd, deltaDays, holidays))
+    stageMap.set(stageTemplate.id, current)
   }
 
   return template.stageTemplates.map((s) => stageMap.get(s.id)).filter(Boolean) as StageInstance[]
