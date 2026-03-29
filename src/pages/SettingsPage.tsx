@@ -237,11 +237,15 @@ export function SettingsPage(): JSX.Element {
   const [newStageName, setNewStageName] = useState('')
   /** 新增环节库条目：类别 */
   const [newStageCategory, setNewStageCategory] = useState('')
+  /** 新增环节库条目：所属管线 ID（空字符串表示通用） */
+  const [newStagePipelineId, setNewStagePipelineId] = useState('')
   /** 正在编辑的环节库条目 ID */
   const [editingSlibId, setEditingSlibId] = useState<string | null>(null)
   const [editSlibName, setEditSlibName] = useState('')
   const [editSlibCategory, setEditSlibCategory] = useState('')
   const [editSlibColor, setEditSlibColor] = useState<string | undefined>(undefined)
+  /** 正在编辑条目的所属管线 ID（空字符串表示通用） */
+  const [editSlibPipelineId, setEditSlibPipelineId] = useState('')
   /** 色板 popover 打开的条目 ID（null 表示关闭） */
   const [colorPopoverId, setColorPopoverId] = useState<string | null>(null)
 
@@ -268,11 +272,13 @@ export function SettingsPage(): JSX.Element {
       id: createId('slib'),
       stageName: name,
       stageCategory: newStageCategory.trim(),
+      pipelineId: newStagePipelineId || undefined,
       color: presetColor,
       deprecated: false,
     })
     setNewStageName('')
     setNewStageCategory('')
+    setNewStagePipelineId('')
   }
 
   /**
@@ -286,6 +292,7 @@ export function SettingsPage(): JSX.Element {
     setEditSlibName(item.stageName)
     setEditSlibCategory(item.stageCategory)
     setEditSlibColor(item.color)
+    setEditSlibPipelineId(item.pipelineId ?? '')
   }
 
   /**
@@ -302,6 +309,7 @@ export function SettingsPage(): JSX.Element {
       ...item,
       stageName: name,
       stageCategory: editSlibCategory.trim(),
+      pipelineId: editSlibPipelineId || undefined,
       color: editSlibColor,
     })
     setEditingSlibId(null)
@@ -616,6 +624,18 @@ export function SettingsPage(): JSX.Element {
                     if (e.key === 'Enter') handleAddStageLibraryItem()
                   }}
                 />
+                <select
+                  value={newStagePipelineId}
+                  onChange={(e) => setNewStagePipelineId(e.target.value)}
+                  title="所属管线"
+                >
+                  <option value="">通用</option>
+                  {state.pipelines.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
                 <button className="primary-btn" type="button" onClick={handleAddStageLibraryItem}>
                   + 新增环节
                 </button>
@@ -635,6 +655,7 @@ export function SettingsPage(): JSX.Element {
                 <tr>
                   <th>环节名称</th>
                   <th>所属类别</th>
+                  <th>所属管线</th>
                   <th>颜色</th>
                   <th>操作</th>
                 </tr>
@@ -642,7 +663,7 @@ export function SettingsPage(): JSX.Element {
               <tbody>
                 {state.stageLibrary.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
                       暂无环节，请点击上方新增或批量导入。
                     </td>
                   </tr>
@@ -665,6 +686,20 @@ export function SettingsPage(): JSX.Element {
                             onChange={(e) => setEditSlibCategory(e.target.value)}
                             style={{ width: '100%' }}
                           />
+                        </td>
+                        <td>
+                          <select
+                            value={editSlibPipelineId}
+                            onChange={(e) => setEditSlibPipelineId(e.target.value)}
+                            style={{ width: '100%' }}
+                          >
+                            <option value="">通用</option>
+                            {state.pipelines.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td>
                           {/* 编辑模式下内联色板 */}
@@ -718,6 +753,24 @@ export function SettingsPage(): JSX.Element {
                         {item.stageCategory || (
                           <span style={{ color: 'var(--color-muted)' }}>—</span>
                         )}
+                      </td>
+                      <td>
+                        <select
+                          value={item.pipelineId ?? ''}
+                          onChange={(e) =>
+                            upsertStageLibraryItem({
+                              ...item,
+                              pipelineId: e.target.value || undefined,
+                            })
+                          }
+                        >
+                          <option value="">通用</option>
+                          {state.pipelines.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td style={{ position: 'relative' }}>
                         {/* 色块 + popover */}

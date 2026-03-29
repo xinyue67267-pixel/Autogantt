@@ -720,6 +720,25 @@ export function ParadigmPage(): JSX.Element {
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span>所属管线</span>
+                <select
+                  value={activeTemplate.pipelineId ?? ''}
+                  onChange={(event) =>
+                    updateActiveTemplate((template) => ({
+                      ...template,
+                      pipelineId: event.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">不限</option>
+                  {state.pipelines.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="row-between">
@@ -738,13 +757,23 @@ export function ParadigmPage(): JSX.Element {
               </button>
             </div>
 
-            {/* 环节库 datalist，供环节名称 combobox 使用 */}
+            {/* 环节库 datalist，供环节名称 combobox 使用；按所属管线优先排序 */}
             <datalist id="stage-library-datalist">
-              {state.stageLibrary
-                .filter((item) => !item.deprecated)
-                .map((item) => (
+              {(() => {
+                const active = state.stageLibrary.filter((item) => !item.deprecated)
+                if (!activeTemplate.pipelineId) {
+                  return active.map((item) => <option key={item.id} value={item.stageName} />)
+                }
+                const pipelineItems = active.filter(
+                  (item) => item.pipelineId === activeTemplate.pipelineId,
+                )
+                const otherItems = active.filter(
+                  (item) => item.pipelineId !== activeTemplate.pipelineId,
+                )
+                return [...pipelineItems, ...otherItems].map((item) => (
                   <option key={item.id} value={item.stageName} />
-                ))}
+                ))
+              })()}
             </datalist>
 
             <div className="stage-list">

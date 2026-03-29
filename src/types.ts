@@ -66,6 +66,8 @@ export interface ParadigmTemplate {
   id: string
   templateName: string
   categoryId: string
+  /** 所属管线 ID（可选）；影响范式编辑器中环节库 combobox 的优先排序 */
+  pipelineId?: string
   stageTemplates: StageTemplate[]
 }
 
@@ -112,6 +114,8 @@ export interface StageLibraryItem {
   stageName: string
   /** 所属类别，与范式固定类别对应；可为空 */
   stageCategory: string
+  /** 所属管线 ID（可选）；空表示通用环节，不属于特定管线 */
+  pipelineId?: string
   /** 自定义颜色，CSS 颜色值（来自主题色板）；可为空，空时时间轴回退到管线颜色 */
   color?: string
   /** 是否停用（被范式引用时不可硬删除，标记停用） */
