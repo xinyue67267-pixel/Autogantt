@@ -39,7 +39,12 @@ function loadState(): AppState {
 
   try {
     const parsed = JSON.parse(raw) as AppState
-    return { ...DEFAULT_APP_STATE, ...parsed, pipelines: DEFAULT_APP_STATE.pipelines }
+    return {
+      ...DEFAULT_APP_STATE,
+      ...parsed,
+      pipelines: DEFAULT_APP_STATE.pipelines,
+      holidays: DEFAULT_APP_STATE.holidays,
+    }
   } catch {
     return DEFAULT_APP_STATE
   }
