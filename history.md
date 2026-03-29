@@ -1,4 +1,4 @@
-#1.22.1（2026-03-29) #修复拖拽联动调整不生效的bug：三个保存分支均改为调用 importScheduleOverrides 持久化，而非仅写入临时 overrides state
+#1.22.2（2026-03-29) #修复联动调整（整体平移）delta=0不生效的bug：originalStart改为从dragState.snapshot取拖前快照，而非已叠加overrides的scheduleMap
 #1.20.0（2026-03-23) #主题功能：设置页新增"主题"Tab，支持默认主题（薰衣草紫）与简约主题（Corporate Minimal 商务蓝灰）切换；切换时同步重置所有管线颜色与环节库颜色；CSS变量+data-theme属性驱动，主题持久化至localStorage
 #1.19.0（2026-03-23) #环节库预设颜色机制：新增/导入/范式追加时自动按色板循环分配颜色，无需手动选色即可在甘特图呈现不同颜色
 #1.18.0（2026-03-23) #导出Excel格式增强（表头/管线22pt加粗居中，需求20pt加粗居中+上边框，环节18pt居中）；固定列导入模板新增H列日期区间（YYYY-MM-DD - YYYY-MM-DD），D/E列为空时解析H列；Toolbar新增"↓ 下载导入模板"按钮

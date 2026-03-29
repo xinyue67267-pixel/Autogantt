@@ -1261,7 +1261,9 @@ export function TimelinePage(): JSX.Element {
     const draggedSchedule = overrides.find((s) => s.requirementId === dragState.requirementId)
     const draggedStage = draggedSchedule?.stages.find((s) => s.stageId === dragState.stageId)
 
-    const originalSchedule = scheduleMap.get(dragState.requirementId)
+    const originalSchedule = dragState.snapshot.find(
+      (s) => s.requirementId === dragState.requirementId,
+    )
     const originalStage = originalSchedule?.stages.find((s) => s.stageId === dragState.stageId)
 
     setPendingDrag({
