@@ -217,8 +217,11 @@ export function TimelinePage(): JSX.Element {
   const toast = useToast()
   const [viewMode, setViewMode] = useState<TimelineViewMode>('week')
   const [year, setYear] = useState(new Date().getFullYear())
+  /** Toolbar 显示的年份——由滚动位置实时驱动，初始与 year 一致 */
+  const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false)
   const yearDropdownRef = useRef<HTMLDivElement | null>(null)
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedStageName, setSelectedStageName] = useState('全部环节')
   const [selectedLevel, setSelectedLevel] = useState('全部级别')
   const [selectedPipeline, setSelectedPipeline] = useState('全部管线')
@@ -370,8 +373,9 @@ export function TimelinePage(): JSX.Element {
   ])
 
   const viewConfig = useMemo(() => {
-    const start = new Date(`${year}-01-01`)
-    const end = new Date(`${year}-12-31`)
+    // 画布覆盖「锚定年前1年」到「锚定年后2年」，共约3年，支持跨年任务条完整显示
+    const start = new Date(`${year - 1}-01-01`)
+    const end = new Date(`${year + 2}-12-31`)
     const unitWidth = getUnitWidth(viewMode)
     const daysPerUnit = getDaysPerUnit(viewMode)
     const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -405,6 +409,9 @@ export function TimelinePage(): JSX.Element {
   const formatHeaderLabel = (value: Date): string => {
     if (viewMode === 'year') return formatYear(value)
     if (viewMode === 'month') return formatYearMonth(value)
+    // 日/周视图：每年 1 月 1 日所在格补显年份，其余仅显示 MM-DD
+    const isYearStart = value.getMonth() === 0 && value.getDate() === 1
+    if (isYearStart) return `${value.getFullYear()}/01-01`
     return formatMonthDay(value)
   }
 
@@ -1423,6 +1430,60 @@ export function TimelinePage(): JSX.Element {
     }
   }, [handleMouseMove, handleMouseUp])
 
+  /**
+   * 将画布 scrollLeft 定位到指定年份的 1 月 1 日。
+   */
+  const scrollToYear = useCallback(
+    (targetYear: number): void => {
+      const el = canvasScrollRef.current
+      if (!el) return
+      const targetDate = `${targetYear}-01-01`
+      const x = Math.max(
+        0,
+        Math.floor(
+          ((new Date(targetDate).getTime() - viewConfig.start.getTime()) /
+            86400000 /
+            viewConfig.daysPerUnit) *
+            viewConfig.unitWidth,
+        ),
+      )
+      el.scrollLeft = x
+    },
+    [viewConfig],
+  )
+
+  /** year 变化时，将画布滚动到该年 1 月 1 日 */
+  useEffect(() => {
+    scrollToYear(year)
+    setDisplayYear(year)
+  }, [year, scrollToYear])
+
+  /** viewConfig 变化时（如切换视图模式），同步重新定位 */
+  useEffect(() => {
+    scrollToYear(displayYear)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewConfig.unitWidth, viewConfig.daysPerUnit])
+
+  /** 监听横向滚动，防抖更新 displayYear */
+  useEffect(() => {
+    const el = canvasScrollRef.current
+    if (!el) return undefined
+    const handleScroll = (): void => {
+      if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current)
+      scrollDebounceRef.current = setTimeout(() => {
+        const scrollLeft = el.scrollLeft
+        const dayOffset = Math.floor((scrollLeft / viewConfig.unitWidth) * viewConfig.daysPerUnit)
+        const visibleDate = new Date(viewConfig.start.getTime() + dayOffset * 86400000)
+        setDisplayYear(visibleDate.getFullYear())
+      }, 100)
+    }
+    el.addEventListener('scroll', handleScroll)
+    return () => {
+      el.removeEventListener('scroll', handleScroll)
+      if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current)
+    }
+  }, [viewConfig])
+
   useEffect(() => {
     if (!yearDropdownOpen) return undefined
     const handleClickOutside = (e: MouseEvent): void => {
@@ -1460,7 +1521,14 @@ export function TimelinePage(): JSX.Element {
             <option value="month">月视图</option>
             <option value="year">年视图</option>
           </select>
-          <button className="ghost-btn" type="button" onClick={() => setYear((v) => v - 1)}>
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={() => {
+              const prev = displayYear - 1
+              setYear(prev)
+            }}
+          >
             上一年
           </button>
           <div className="year-picker" ref={yearDropdownRef}>
@@ -1469,15 +1537,15 @@ export function TimelinePage(): JSX.Element {
               type="button"
               onClick={() => setYearDropdownOpen((v) => !v)}
             >
-              {year}
+              {displayYear}
             </button>
             {yearDropdownOpen && (
               <ul className="year-dropdown">
-                {Array.from({ length: 21 }, (_, i) => year - 10 + i).map((y) => (
+                {Array.from({ length: 21 }, (_, i) => displayYear - 10 + i).map((y) => (
                   <li key={y}>
                     <button
                       className={
-                        y === year
+                        y === displayYear
                           ? 'year-dropdown-item year-dropdown-item--active'
                           : 'year-dropdown-item'
                       }
@@ -1494,7 +1562,14 @@ export function TimelinePage(): JSX.Element {
               </ul>
             )}
           </div>
-          <button className="ghost-btn" type="button" onClick={() => setYear((v) => v + 1)}>
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={() => {
+              const next = displayYear + 1
+              setYear(next)
+            }}
+          >
             下一年
           </button>
           {/* 折叠/展开全部 */}
