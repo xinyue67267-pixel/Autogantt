@@ -1277,7 +1277,7 @@ export function TimelinePage(): JSX.Element {
       originalStart: originalStage?.startDate ?? draggedStage?.startDate ?? '',
     })
     setDragState(null)
-  }, [dragState, overrides, scheduleMap, state])
+  }, [dragState, overrides, state])
 
   /**
    * 用户确认保存拖拽结果。
