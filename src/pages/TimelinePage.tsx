@@ -217,6 +217,8 @@ export function TimelinePage(): JSX.Element {
   const toast = useToast()
   const [viewMode, setViewMode] = useState<TimelineViewMode>('week')
   const [year, setYear] = useState(new Date().getFullYear())
+  const [yearDropdownOpen, setYearDropdownOpen] = useState(false)
+  const yearDropdownRef = useRef<HTMLDivElement | null>(null)
   const [selectedStageName, setSelectedStageName] = useState('全部环节')
   const [selectedLevel, setSelectedLevel] = useState('全部级别')
   const [selectedPipeline, setSelectedPipeline] = useState('全部管线')
@@ -1421,6 +1423,17 @@ export function TimelinePage(): JSX.Element {
     }
   }, [handleMouseMove, handleMouseUp])
 
+  useEffect(() => {
+    if (!yearDropdownOpen) return undefined
+    const handleClickOutside = (e: MouseEvent): void => {
+      if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target as Node)) {
+        setYearDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [yearDropdownOpen])
+
   /** 今日 x 坐标（用于高亮竖线） */
   const todayX = useMemo(() => {
     const todayStr = toISODate(new Date())
@@ -1450,7 +1463,37 @@ export function TimelinePage(): JSX.Element {
           <button className="ghost-btn" type="button" onClick={() => setYear((v) => v - 1)}>
             上一年
           </button>
-          <span className="year-tag">{year}</span>
+          <div className="year-picker" ref={yearDropdownRef}>
+            <button
+              className="year-tag"
+              type="button"
+              onClick={() => setYearDropdownOpen((v) => !v)}
+            >
+              {year}
+            </button>
+            {yearDropdownOpen && (
+              <ul className="year-dropdown">
+                {Array.from({ length: 21 }, (_, i) => year - 10 + i).map((y) => (
+                  <li key={y}>
+                    <button
+                      className={
+                        y === year
+                          ? 'year-dropdown-item year-dropdown-item--active'
+                          : 'year-dropdown-item'
+                      }
+                      type="button"
+                      onClick={() => {
+                        setYear(y)
+                        setYearDropdownOpen(false)
+                      }}
+                    >
+                      {y}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button className="ghost-btn" type="button" onClick={() => setYear((v) => v + 1)}>
             下一年
           </button>
