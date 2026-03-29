@@ -7,7 +7,7 @@
  * - 管理管线（含颜色选择）
  * - 管理登录状态与存储模式
  */
-import { ChangeEvent, useState, type JSX } from 'react'
+import { ChangeEvent, useMemo, useState, type JSX } from 'react'
 import * as XLSX from 'xlsx'
 import { useAppStateContext } from '../context/AppStateContext'
 import { useToast } from '../context/ToastContext'
@@ -97,6 +97,143 @@ const SLIB_COLORS_MINIMAL: string[] = [
   '#F0F6FA',
   '#E8EFF5',
 ]
+
+/**
+ * 格式化日期区间为简短显示（MM/DD 或 MM/DD–MM/DD）。
+ */
+function formatRange(startDate: string, endDate: string): string {
+  const fmt = (d: string): string => d.slice(5).replace('-', '/')
+  return startDate === endDate ? fmt(startDate) : `${fmt(startDate)}–${fmt(endDate)}`
+}
+
+/**
+ * 工作日历分组视图：按年折叠，Pill 标签展示。
+ */
+function CalendarGroups({
+  holidays,
+  onRemove,
+  form,
+  setForm,
+  onAdd,
+}: {
+  holidays: import('../types').HolidayRange[]
+  onRemove: (id: string) => void
+  form: Omit<import('../types').HolidayRange, 'id'>
+  setForm: React.Dispatch<React.SetStateAction<Omit<import('../types').HolidayRange, 'id'>>>
+  onAdd: () => void
+}): JSX.Element {
+  const currentYear = new Date().getFullYear()
+
+  // 按年分组
+  const grouped = useMemo(() => {
+    const map = new Map<number, import('../types').HolidayRange[]>()
+    for (const h of holidays) {
+      const yr = parseInt(h.startDate.slice(0, 4), 10)
+      if (!map.has(yr)) map.set(yr, [])
+      map.get(yr)!.push(h)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
+  }, [holidays])
+
+  const [collapsed, setCollapsed] = useState<Set<number>>(
+    () => new Set(grouped.filter(([yr]) => yr !== currentYear).map(([yr]) => yr)),
+  )
+
+  const toggleYear = (yr: number): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(yr)) next.delete(yr)
+      else next.add(yr)
+      return next
+    })
+  }
+
+  return (
+    <div className="cal-root">
+      {/* 分组列表 */}
+      {grouped.map(([yr, items]) => {
+        const isCollapsed = collapsed.has(yr)
+        return (
+          <div key={yr} className="cal-year-group">
+            <button
+              type="button"
+              className="cal-year-header"
+              onClick={() => toggleYear(yr)}
+              aria-expanded={!isCollapsed}
+            >
+              <span className="cal-year-label">{yr}</span>
+              <span className="cal-year-count">{items.length} 条</span>
+              <span className={`cal-chevron${isCollapsed ? '' : ' cal-chevron--open'}`}>›</span>
+            </button>
+            {!isCollapsed && (
+              <div className="cal-pill-wrap">
+                {items.map((h) => (
+                  <span
+                    key={h.id}
+                    className={`cal-pill cal-pill--${h.type}`}
+                    title={`${h.name}  ${h.startDate} ~ ${h.endDate}`}
+                  >
+                    <span className="cal-pill-dot" />
+                    <span className="cal-pill-name">{h.name}</span>
+                    <span className="cal-pill-date">{formatRange(h.startDate, h.endDate)}</span>
+                    <button
+                      type="button"
+                      className="cal-pill-remove"
+                      aria-label={`删除 ${h.name}`}
+                      onClick={() => onRemove(h.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {holidays.length === 0 && <p className="cal-empty">暂无日历区间，请在下方新增。</p>}
+
+      {/* 新增表单 */}
+      <div className="cal-add-form">
+        <input
+          className="cal-add-name"
+          placeholder="区间名称"
+          value={form.name}
+          onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onAdd()
+          }}
+        />
+        <select
+          className="cal-add-type"
+          value={form.type}
+          onChange={(e) =>
+            setForm((prev) => ({ ...prev, type: e.target.value as 'holiday' | 'workday' }))
+          }
+        >
+          <option value="holiday">节假日</option>
+          <option value="workday">调休上班</option>
+        </select>
+        <input
+          type="date"
+          className="cal-add-date"
+          value={form.startDate}
+          onChange={(e) => setForm((prev) => ({ ...prev, startDate: e.target.value }))}
+        />
+        <span className="cal-add-sep">–</span>
+        <input
+          type="date"
+          className="cal-add-date"
+          value={form.endDate}
+          onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))}
+        />
+        <button className="primary-btn" type="button" onClick={onAdd}>
+          + 新增
+        </button>
+      </div>
+    </div>
+  )
+}
 
 /**
  * 设置页组件。
@@ -446,86 +583,13 @@ export function SettingsPage(): JSX.Element {
         {activeTab === 'calendar' && (
           <div className="card">
             <h2>工作日历</h2>
-            <div className="field-grid">
-              <label className="field">
-                <span>名称</span>
-                <input
-                  value={holidayForm.name}
-                  onChange={(event) =>
-                    setHolidayForm((prev) => ({ ...prev, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>类型</span>
-                <select
-                  value={holidayForm.type}
-                  onChange={(event) =>
-                    setHolidayForm((prev) => ({
-                      ...prev,
-                      type: event.target.value as 'holiday' | 'workday',
-                    }))
-                  }
-                >
-                  <option value="holiday">节假日（非工作日）</option>
-                  <option value="workday">调休（工作日）</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>开始日期</span>
-                <input
-                  type="date"
-                  value={holidayForm.startDate}
-                  onChange={(event) =>
-                    setHolidayForm((prev) => ({ ...prev, startDate: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>结束日期</span>
-                <input
-                  type="date"
-                  value={holidayForm.endDate}
-                  onChange={(event) =>
-                    setHolidayForm((prev) => ({ ...prev, endDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <button className="primary-btn" type="button" onClick={handleAddHoliday}>
-              新增日历区间
-            </button>
-
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>名称</th>
-                  <th>类型</th>
-                  <th>开始</th>
-                  <th>结束</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.holidays.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.type === 'holiday' ? '节假日' : '调休工作日'}</td>
-                    <td>{item.startDate}</td>
-                    <td>{item.endDate}</td>
-                    <td>
-                      <button
-                        className="danger-btn"
-                        type="button"
-                        onClick={() => removeHoliday(item.id)}
-                      >
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <CalendarGroups
+              holidays={state.holidays}
+              onRemove={removeHoliday}
+              form={holidayForm}
+              setForm={setHolidayForm}
+              onAdd={handleAddHoliday}
+            />
           </div>
         )}
 
