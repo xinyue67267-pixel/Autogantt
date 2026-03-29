@@ -159,11 +159,12 @@ export function RequirementsPage(): JSX.Element {
   const getTemplateName = (templateId: string): string =>
     state.paradigms.find((p) => p.id === templateId)?.templateName ?? templateId
 
-  /** 全量排期（用于 Drawer 详情展示） */
-  const allSchedules = useMemo(
-    () => generateSchedules(state.requirements, state.paradigms, state.holidays),
-    [state.requirements, state.paradigms, state.holidays],
-  )
+  /** 全量排期（用于 Drawer 详情展示），合并持久化的拖拽覆盖排期 */
+  const allSchedules = useMemo(() => {
+    const generated = generateSchedules(state.requirements, state.paradigms, state.holidays)
+    const overrideMap = new Map(state.scheduleOverrides.map((s) => [s.requirementId, s]))
+    return generated.map((s) => overrideMap.get(s.requirementId) ?? s)
+  }, [state.requirements, state.paradigms, state.holidays, state.scheduleOverrides])
 
   /** Drawer 中展示的需求对象 */
   const drawerReq = drawerReqId ? state.requirements.find((r) => r.id === drawerReqId) : null
