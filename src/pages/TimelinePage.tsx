@@ -1283,7 +1283,13 @@ export function TimelinePage(): JSX.Element {
    * @returns {void}
    */
   const handleConfirmDrag = (): void => {
-    /** overrides 已经是最新排期，直接保留 */
+    if (!pendingDrag) return
+    /** 持久化当前 overrides 中被拖拽需求的排期，再清空临时 overrides */
+    const target = pendingDrag.schedules.find((s) => s.requirementId === pendingDrag.requirementId)
+    if (target) {
+      importScheduleOverrides([target])
+    }
+    setOverrides([])
     setPendingDrag(null)
   }
 
@@ -1336,7 +1342,8 @@ export function TimelinePage(): JSX.Element {
     const nextOverrides = pendingDrag.schedules.map((s) =>
       s.requirementId === pendingDrag.requirementId ? { ...s, stages: cascadedStages } : s,
     )
-    setOverrides(nextOverrides)
+    importScheduleOverrides(nextOverrides)
+    setOverrides([])
     setPendingDrag(null)
   }
 
@@ -1384,7 +1391,8 @@ export function TimelinePage(): JSX.Element {
     const nextOverrides = pendingDrag.schedules.map((s) =>
       s.requirementId === pendingDrag.requirementId ? { ...s, stages: shiftedStages } : s,
     )
-    setOverrides(nextOverrides)
+    importScheduleOverrides(nextOverrides)
+    setOverrides([])
     setPendingDrag(null)
   }
 
