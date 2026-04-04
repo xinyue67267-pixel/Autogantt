@@ -7,10 +7,12 @@
  * 生成支持列下拉验证的 .xlsx 文件。
  *
  * 同时提供 buildGanttXlsxBlob，用于生成带单元格背景色的甘特矩阵 xlsx 文件。
+ * 以及 buildRequirementScheduleXlsxBlob，用于生成需求排期明细 xlsx 文件。
  *
  * 限制：仅支持字符串/数字单元格、单工作表、列级下拉验证，
  * 满足范式模板导出需求。
  */
+import type { Requirement, RequirementSchedule } from '../types'
 
 /** 单元格值类型 */
 type CellValue = string | number | null
@@ -563,6 +565,172 @@ export function buildGanttXlsxBlob(rows: GanttCell[][], sheetName: string): Blob
   }
 
   return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+}
+
+/**
+ * 生成需求排期明细 xlsx 文件 Blob。
+ *
+ * @description
+ * 按需求 → 环节两级行结构生成 5 列固定表格：
+ *   A=需求/环节、B=需求级别、C=开始日期、D=结束日期、E=排期区间
+ * 表头行与需求行加粗（font 14pt bold），环节行正常字重（font 11pt）。
+ *
+ * @param {Requirement[]} requirements 当前筛选后的需求列表
+ * @param {RequirementSchedule[]} schedules 对应排期列表
+ * @returns {Blob} xlsx 文件 Blob
+ */
+export function buildRequirementScheduleXlsxBlob(
+  requirements: Requirement[],
+  schedules: RequirementSchedule[],
+): Blob {
+  const scheduleMap = new Map(schedules.map((s) => [s.requirementId, s]))
+
+  /**
+   * 构建行数据：表头行 + 每条需求行 + 各环节行。
+   * 需求行：A=名称，B=级别，C/D/E 留空。
+   * 环节行：A=两空格缩进名称，B 留空，C=开始日期，D=结束日期，E=区间字符串。
+   */
+  const headerRow: CellValue[] = ['需求/环节', '需求级别', '开始日期', '结束日期', '排期']
+  const dataRows: CellValue[][] = []
+
+  /** 记录每条数据行是否为需求行（用于样式判断，与 dataRows 一一对应） */
+  const isReqRowFlags: boolean[] = []
+
+  for (const req of requirements) {
+    dataRows.push([req.requirementName, req.levelId, null, null, null])
+    isReqRowFlags.push(true)
+
+    const schedule = scheduleMap.get(req.id)
+    if (schedule) {
+      for (const stage of schedule.stages) {
+        const range = `${stage.startDate} - ${stage.endDate}`
+        dataRows.push([`  ${stage.stageName}`, null, stage.startDate, stage.endDate, range])
+        isReqRowFlags.push(false)
+      }
+    }
+  }
+
+  const allRows = [headerRow, ...dataRows]
+
+  /**
+   * styles.xml：两种字体样式。
+   * xf 0: 默认 11pt（环节行）
+   * xf 1: 14pt 加粗（表头行 + 需求行）
+   */
+  const reqStylesXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<fonts count="2">` +
+    `<font><sz val="11"/><name val="Calibri"/></font>` +
+    `<font><b/><sz val="14"/><name val="Calibri"/></font>` +
+    `</fonts>` +
+    `<fills count="2">` +
+    `<fill><patternFill patternType="none"/></fill>` +
+    `<fill><patternFill patternType="gray125"/></fill>` +
+    `</fills>` +
+    `<borders count="1">` +
+    `<border><left/><right/><top/><bottom/><diagonal/></border>` +
+    `</borders>` +
+    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+    `<cellXfs count="2">` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+    `</cellXfs>` +
+    `</styleSheet>`
+
+  /**
+   * 循环目的：逐行生成 sheetData XML，表头行和需求行使用加粗样式（s="1"）。
+   */
+  const sheetDataRows = allRows
+    .map((row, rIdx) => {
+      /** rIdx=0 为表头行，rIdx>0 时查 isReqRowFlags[rIdx-1] 判断需求行 */
+      const useBold = rIdx === 0 || isReqRowFlags[rIdx - 1] === true
+      const sAttr = useBold ? ` s="1"` : ''
+      const cells = row
+        .map((cell, cIdx) => {
+          const addr = `${colLetter(cIdx)}${rIdx + 1}`
+          if (cell === null || cell === undefined || cell === '') {
+            return useBold ? `<c r="${addr}"${sAttr}/>` : ''
+          }
+          return `<c r="${addr}" t="inlineStr"${sAttr}><is><t>${escXml(String(cell))}</t></is></c>`
+        })
+        .join('')
+      return `<row r="${rIdx + 1}">${cells}</row>`
+    })
+    .join('')
+
+  const reqSheetXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<sheetData>${sheetDataRows}</sheetData>` +
+    `</worksheet>`
+
+  const REQ_CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`
+
+  const REQ_WORKBOOK_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+
+  const reqWorkbookXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<sheets><sheet name="需求排期" sheetId="1" r:id="rId1"/></sheets>` +
+    `</workbook>`
+
+  const reqEntries: Array<{ name: string; data: Uint8Array }> = [
+    { name: '[Content_Types].xml', data: encode(REQ_CONTENT_TYPES) },
+    { name: '_rels/.rels', data: encode(RELS_XML) },
+    { name: 'xl/workbook.xml', data: encode(reqWorkbookXml) },
+    { name: 'xl/_rels/workbook.xml.rels', data: encode(REQ_WORKBOOK_RELS) },
+    { name: 'xl/worksheets/sheet1.xml', data: encode(reqSheetXml) },
+    { name: 'xl/styles.xml', data: encode(reqStylesXml) },
+  ]
+
+  const reqLocals: Uint8Array[] = []
+  const reqCds: Uint8Array[] = []
+  let reqLocalOffset = 0
+
+  for (const entry of reqEntries) {
+    const { local, cd } = buildZipEntry(entry.name, entry.data, reqLocalOffset)
+    reqLocals.push(local)
+    reqCds.push(cd)
+    reqLocalOffset += local.length
+  }
+
+  const reqCdStart = reqLocalOffset
+  const reqCdSize = reqCds.reduce((acc, cd) => acc + cd.length, 0)
+  const reqEocd = new Uint8Array(22)
+  const reqEv = new DataView(reqEocd.buffer)
+  writeU32(reqEv, 0, 0x06054b50)
+  writeU16(reqEv, 4, 0)
+  writeU16(reqEv, 6, 0)
+  writeU16(reqEv, 8, reqEntries.length)
+  writeU16(reqEv, 10, reqEntries.length)
+  writeU32(reqEv, 12, reqCdSize)
+  writeU32(reqEv, 16, reqCdStart)
+  writeU16(reqEv, 20, 0)
+
+  const reqParts = [...reqLocals, ...reqCds, reqEocd]
+  const reqTotalSize = reqParts.reduce((acc, p) => acc + p.length, 0)
+  const reqResult = new Uint8Array(reqTotalSize)
+  let reqPos = 0
+  for (const part of reqParts) {
+    reqResult.set(part, reqPos)
+    reqPos += part.length
+  }
+
+  return new Blob([reqResult], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
 }

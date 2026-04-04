@@ -1,3 +1,17 @@
+#1.33.1（2026-04-05) #bugfix：时间轴左侧需求栏鼠标滚轮无法纵向滚动——timeline-left-body为overflow-y:hidden无法响应wheel事件；新增onWheel将deltaY转发至canvasScrollRef，由现有scroll同步逻辑驱动左右联动
+#1.33.0（2026-04-04) #新增：设置页环节库新增「所属管线」筛选下拉（全部/各管线），复选框多选列，批量删除（二次确认，引用中标记停用）、批量修改所属管线、批量修改颜色（含清除）批量操作栏
+#1.32.2（2026-04-04)#数据：预设范式模板替换为「角色时装-S」（12个环节含依赖链，所属管线=角色，分类=时装）；新增「时装」模板分类；老用户范式列表为空时自动补充预设 #数据：预设环节库替换为12条角色管线环节（概念设计/三视图/低模/绑定/贴图/美术效果优化/策划配置/特效开发/动作开发/完整测试/001提交/回归测试），强制覆盖老用户数据 #新增：需求页面左侧Toolbar新增「↓ 导出Excel」按钮，导出当前筛选需求的排期明细（需求/环节、需求级别、开始日期、结束日期、排期5列），受管线/级别筛选影响，文件名需求排期\_YYYY-MM-DD.xlsx
+#bugfix：时间轴拖拽确认弹窗仅显示被拖拽需求的依赖冲突——checkDependencyConflicts调用时过滤为当前需求排期，不再混入其他需求的冲突信息
+#bugfix：倒推模式依赖修正恢复为单向（只向后推），避免双向修正将最后一个环节的endDate从DDL锚点拉离；正推模式保持双向修正不变
+#1.31.2（2026-04-04) #bugfix：generateScheduleForRequirement依赖修正改为双向——有依赖的环节开始日期严格由依赖候选时间决定（早于/晚于初始位置均生效），确保"B仅依赖A"时B不受无关环节C初始铺排位置影响
+#bugfix：cascadeReschedule（拖拽重算）单次遍历在依赖拓扑与模板顺序不一致时传播遗漏——改为多轮while(changed)迭代，与generateScheduleForRequirement对称
+#1.31.0（2026-03-30) #bugfix：依赖修正循环单次遍历在依赖拓扑与模板顺序不一致时无法收敛——改为多轮迭代直到无日期变化，确保B仅依赖A时不受C影响
+#1.30.1（2026-03-30) #bugfix：时间轴需求列表过长时左侧树列无法滚动——新增timeline-left-body容器(overflow-y:hidden)，右侧画布scroll事件同步scrollTop到左侧，实现左右纵向联动
+#1.30.0（2026-03-30) #环节库导入模板新增「所属管线」列（C列，原颜色移至D列）；导入时按管线名称匹配pipelineId；范式导入模板新增「所属管线」列（J列），下载模板注入管线名称下拉，导入时按名称匹配pipelineId写入范式
+#1.29.0（2026-03-30) #需求详情Drawer新增「人天」列（工期与里程碑之间）：优先取范式模板referencePersonDays×quantity，无法匹配时回退为实际工作日天数，始终有值
+#1.28.2（2026-03-30) #bugfix：向前拖拽环节块不动/宽度收缩——applyScheduleDrag的snap方向固定forward，越过非工作日时startDate弹回；改为按deltaDays符号选择snap方向（向前backward/向后forward），move动作endDate改由startDate+工期推算
+#1.28.1（2026-03-30) #bugfix：级联平移（cascadeShift）向前拖拽失效——countWorkingDays含边界导致每帧多移1工作日；改为自然日delta+snapToWorkingDay，与applyScheduleDrag语义对齐
+#1.28.0（2026-03-30) #bugfix：排期计算全面剔除非工作日——新增countWorkingDays工具函数；generateScheduleForRequirement依赖修正、cascadeReschedule保工期、cascadeShift级联平移均改用工作日计数；拖拽时startDate/endDate按自然日平移后snap工作日
 #1.27.0（2026-03-30) #时间轴无限滚动重构：画布扩展为锚定年前1年+后2年（共3年），跨年任务条完整显示；年份标签由滚动位置实时驱动（防抖100ms）；箭头/下拉改为scroll定位语义；日/周视图跨年首格补显年份
 #1.26.2（2026-03-30) #bugfix：需求页Drawer排期与时间轴拖拽结果不联动——allSchedules未合并scheduleOverrides，现已修复
 #1.26.1（2026-03-30) #工作日历布局调整：新增表单固定顶部，分组列表区独立滚动；card高度撑满右侧内容区

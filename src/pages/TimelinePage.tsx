@@ -246,6 +246,7 @@ export function TimelinePage(): JSX.Element {
   } | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const canvasScrollRef = useRef<HTMLDivElement | null>(null)
+  const leftScrollRef = useRef<HTMLDivElement | null>(null)
 
   const generatedSchedules = useMemo(
     () => generateSchedules(state.requirements, state.paradigms, state.holidays),
@@ -1265,7 +1266,10 @@ export function TimelinePage(): JSX.Element {
       return
     }
 
-    const conflicts = checkDependencyConflicts(overrides, state)
+    const conflicts = checkDependencyConflicts(
+      overrides.filter((s) => s.requirementId === dragState.requirementId),
+      state,
+    )
 
     const draggedSchedule = overrides.find((s) => s.requirementId === dragState.requirementId)
     const draggedStage = draggedSchedule?.stages.find((s) => s.stageId === dragState.stageId)
@@ -1469,6 +1473,10 @@ export function TimelinePage(): JSX.Element {
     const el = canvasScrollRef.current
     if (!el) return undefined
     const handleScroll = (): void => {
+      // 同步左侧树列表的纵向滚动
+      if (leftScrollRef.current) {
+        leftScrollRef.current.scrollTop = el.scrollTop
+      }
       if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current)
       scrollDebounceRef.current = setTimeout(() => {
         const scrollLeft = el.scrollLeft
@@ -1685,76 +1693,86 @@ export function TimelinePage(): JSX.Element {
           <div className="timeline-left-header" style={{ height: HEADER_HEIGHT }}>
             项目/需求
           </div>
-          {rows.map((row) => {
-            if (row.kind === 'pipeline') {
-              return (
-                <div
-                  key={`pipe-${row.pipelineId}`}
-                  className="timeline-left-row pipeline-row"
-                  style={{ height: ROW_HEIGHT }}
-                >
-                  <button
-                    className="tree-toggle"
-                    type="button"
-                    onClick={() =>
-                      setCollapsedPipelines((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(row.pipelineId)) next.delete(row.pipelineId)
-                        else next.add(row.pipelineId)
-                        return next
-                      })
-                    }
-                    aria-label={row.collapsed ? '展开' : '收起'}
+          <div
+            className="timeline-left-body"
+            ref={leftScrollRef}
+            onWheel={(e) => {
+              if (canvasScrollRef.current) {
+                canvasScrollRef.current.scrollTop += e.deltaY
+              }
+            }}
+          >
+            {rows.map((row) => {
+              if (row.kind === 'pipeline') {
+                return (
+                  <div
+                    key={`pipe-${row.pipelineId}`}
+                    className="timeline-left-row pipeline-row"
+                    style={{ height: ROW_HEIGHT }}
                   >
-                    {row.collapsed ? '▸' : '▾'}
-                  </button>
-                  <span className="tree-dot" style={{ background: row.pipelineColor }} />
-                  <strong>{row.pipelineName}</strong>
-                </div>
-              )
-            }
+                    <button
+                      className="tree-toggle"
+                      type="button"
+                      onClick={() =>
+                        setCollapsedPipelines((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(row.pipelineId)) next.delete(row.pipelineId)
+                          else next.add(row.pipelineId)
+                          return next
+                        })
+                      }
+                      aria-label={row.collapsed ? '展开' : '收起'}
+                    >
+                      {row.collapsed ? '▸' : '▾'}
+                    </button>
+                    <span className="tree-dot" style={{ background: row.pipelineColor }} />
+                    <strong>{row.pipelineName}</strong>
+                  </div>
+                )
+              }
 
-            if (row.kind === 'requirement') {
+              if (row.kind === 'requirement') {
+                return (
+                  <div
+                    key={`req-${row.requirementId}`}
+                    className="timeline-left-row requirement-row"
+                    style={{ height: ROW_HEIGHT }}
+                  >
+                    <button
+                      className="tree-toggle"
+                      type="button"
+                      onClick={() =>
+                        setCollapsedRequirements((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(row.requirementId)) next.delete(row.requirementId)
+                          else next.add(row.requirementId)
+                          return next
+                        })
+                      }
+                      aria-label={row.collapsed ? '展开' : '收起'}
+                    >
+                      {row.collapsed ? '▸' : '▾'}
+                    </button>
+                    <span className="tree-indent" />
+                    <strong>{row.requirementName}</strong>
+                    <span className="tree-badge">{row.levelId}</span>
+                  </div>
+                )
+              }
+
               return (
                 <div
-                  key={`req-${row.requirementId}`}
-                  className="timeline-left-row requirement-row"
+                  key={`${row.requirementId}-${row.stage.stageId}`}
+                  className="timeline-left-row stage-row"
                   style={{ height: ROW_HEIGHT }}
                 >
-                  <button
-                    className="tree-toggle"
-                    type="button"
-                    onClick={() =>
-                      setCollapsedRequirements((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(row.requirementId)) next.delete(row.requirementId)
-                        else next.add(row.requirementId)
-                        return next
-                      })
-                    }
-                    aria-label={row.collapsed ? '展开' : '收起'}
-                  >
-                    {row.collapsed ? '▸' : '▾'}
-                  </button>
                   <span className="tree-indent" />
-                  <strong>{row.requirementName}</strong>
-                  <span className="tree-badge">{row.levelId}</span>
+                  <span className="tree-indent" />
+                  <span className="stage-label">{row.stage.stageName}</span>
                 </div>
               )
-            }
-
-            return (
-              <div
-                key={`${row.requirementId}-${row.stage.stageId}`}
-                className="timeline-left-row stage-row"
-                style={{ height: ROW_HEIGHT }}
-              >
-                <span className="tree-indent" />
-                <span className="tree-indent" />
-                <span className="stage-label">{row.stage.stageName}</span>
-              </div>
-            )
-          })}
+            })}
+          </div>
         </div>
 
         {/* 拖拽分隔条 */}

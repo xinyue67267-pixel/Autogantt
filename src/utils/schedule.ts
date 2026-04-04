@@ -14,7 +14,14 @@ import type {
   StageInstance,
   StageTemplate,
 } from '../types'
-import { addWorkingDays, diffDays, snapToWorkingDay, toISODate } from './date'
+import {
+  addWorkingDays,
+  cloneDate,
+  countWorkingDays,
+  diffDays,
+  snapToWorkingDay,
+  toISODate,
+} from './date'
 
 /**
  * 将环节持续时长从“人天”映射为“工作日”。
@@ -66,7 +73,7 @@ function getDependencyStartCandidate(
       candidate = addWorkingDays(preEnd, 1, holidays)
     } else if (dependency.trigger === 'finish_percent') {
       const percent = Math.max(0, Math.min(100, dependency.value ?? 100))
-      const preDuration = Math.max(1, diffDays(preStart, preEnd) + 1)
+      const preDuration = Math.max(1, countWorkingDays(preStart, preEnd, holidays))
       const requiredDays = Math.max(0, Math.ceil((preDuration * percent) / 100) - 1)
       candidate = addWorkingDays(preStart, requiredDays, holidays)
     } else if (dependency.trigger === 'finish_offset_days') {
@@ -151,27 +158,52 @@ export function generateScheduleForRequirement(
 
   const stageMap = new Map<string, StageInstance>(generated.map((item) => [item.stageId, item]))
 
+  const isBackward = requirement.scheduleMode === 'backward_from_ddl' && !!requirement.projectDDL
+
   /**
-   * 循环目的：按环节顺序应用依赖触发规则，必要时整体顺延当前环节。
+   * 循环目的：多轮迭代依赖修正，直到无环节日期变化为止。
+   * 解决依赖拓扑与模板顺序不一致时单次遍历无法收敛的问题。
+   *
+   * 修正规则按排期模式区分：
+   * - 正推模式（双向）：有依赖的环节开始日期严格由候选时间决定，无论早晚，
+   *   确保"B 仅依赖 A"时 B 不受无关环节 C 初始位置影响。
+   * - 倒推模式（单向，只向后推）：候选时间晚于当前位置才触发修正，保持
+   *   最后一个环节 endDate = DDL 的锚点不被依赖修正破坏。
    */
-  for (const stageTemplate of stages) {
-    const current = stageMap.get(stageTemplate.id)
-    if (!current) {
-      continue
-    }
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const stageTemplate of stages) {
+      const current = stageMap.get(stageTemplate.id)
+      if (!current) {
+        continue
+      }
 
-    const candidate = getDependencyStartCandidate(stageTemplate, stageMap, holidays)
+      /**
+       * 条件目的：无依赖的环节保持初始铺排位置，不参与修正。
+       */
+      if (stageTemplate.dependencies.length === 0) {
+        continue
+      }
 
-    /**
-     * 条件目的：仅当依赖触发时间晚于当前开始时间时才做顺延，避免不必要改动。
-     */
-    if (candidate && candidate > new Date(current.startDate)) {
-      const currentStart = new Date(current.startDate)
-      const currentEnd = new Date(current.endDate)
-      const shift = diffDays(currentStart, candidate)
-      current.startDate = toISODate(addWorkingDays(currentStart, shift, holidays))
-      current.endDate = toISODate(addWorkingDays(currentEnd, shift, holidays))
-      stageMap.set(stageTemplate.id, current)
+      const candidate = getDependencyStartCandidate(stageTemplate, stageMap, holidays)
+      if (!candidate) {
+        continue
+      }
+
+      const shouldUpdate = isBackward
+        ? candidate > new Date(current.startDate)
+        : toISODate(candidate) !== current.startDate
+
+      if (shouldUpdate) {
+        const currentStart = new Date(current.startDate)
+        const currentEnd = new Date(current.endDate)
+        const durationDays = countWorkingDays(currentStart, currentEnd, holidays)
+        current.startDate = toISODate(candidate)
+        current.endDate = toISODate(addWorkingDays(candidate, durationDays - 1, holidays))
+        stageMap.set(stageTemplate.id, current)
+        changed = true
+      }
     }
   }
 
@@ -247,45 +279,50 @@ export function cascadeReschedule(
   stageMap.set(changedStageId, changed)
 
   /**
-   * 按模板顺序遍历，跳过被拖拽环节本身，对有依赖关系的后置环节按 FS 规则重算。
-   * 循环目的：保证依赖链从前到后依次传播，避免乱序导致计算错误。
+   * 多轮迭代依赖传播，直到无环节日期变化为止。
+   * 与 generateScheduleForRequirement 保持一致，解决拓扑顺序与模板顺序不一致时单次遍历遗漏的问题。
    */
-  for (const stageTemplate of template.stageTemplates) {
-    if (stageTemplate.id === changedStageId) {
-      continue
-    }
+  let hasChange = true
+  while (hasChange) {
+    hasChange = false
+    for (const stageTemplate of template.stageTemplates) {
+      if (stageTemplate.id === changedStageId) {
+        continue
+      }
 
-    /**
-     * 条件目的：无依赖的环节不参与联动，保持原排期不变。
-     */
-    if (stageTemplate.dependencies.length === 0) {
-      continue
-    }
+      /**
+       * 条件目的：无依赖的环节不参与联动，保持原排期不变。
+       */
+      if (stageTemplate.dependencies.length === 0) {
+        continue
+      }
 
-    const candidate = getDependencyStartCandidate(stageTemplate, stageMap, holidays)
-    if (!candidate) {
-      continue
-    }
+      const candidate = getDependencyStartCandidate(stageTemplate, stageMap, holidays)
+      if (!candidate) {
+        continue
+      }
 
-    const current = stageMap.get(stageTemplate.id)
-    /**
-     * 条件目的：环节实例缺失时跳过，不影响其他环节重算。
-     */
-    if (!current) {
-      continue
-    }
+      const current = stageMap.get(stageTemplate.id)
+      /**
+       * 条件目的：环节实例缺失时跳过，不影响其他环节重算。
+       */
+      if (!current) {
+        continue
+      }
 
-    /**
-     * 条件目的：依赖触发时间与当前开始时间不同时更新排期，双向生效（前移/后移均重算）。
-     */
-    const candidateStr = toISODate(candidate)
-    if (candidateStr !== current.startDate) {
-      const currentStart = new Date(current.startDate)
-      const currentEnd = new Date(current.endDate)
-      const durationDays = diffDays(currentStart, currentEnd)
-      current.startDate = candidateStr
-      current.endDate = toISODate(addWorkingDays(candidate, durationDays, holidays))
-      stageMap.set(stageTemplate.id, current)
+      /**
+       * 条件目的：依赖触发时间与当前开始时间不同时更新排期，双向生效（前移/后移均重算）。
+       */
+      const candidateStr = toISODate(candidate)
+      if (candidateStr !== current.startDate) {
+        const currentStart = new Date(current.startDate)
+        const currentEnd = new Date(current.endDate)
+        const durationDays = countWorkingDays(currentStart, currentEnd, holidays)
+        current.startDate = candidateStr
+        current.endDate = toISODate(addWorkingDays(candidate, durationDays - 1, holidays))
+        stageMap.set(stageTemplate.id, current)
+        hasChange = true
+      }
     }
   }
 
@@ -360,8 +397,12 @@ export function cascadeShift(
 
     const currentStart = new Date(current.startDate)
     const currentEnd = new Date(current.endDate)
-    current.startDate = toISODate(addWorkingDays(currentStart, deltaDays, holidays))
-    current.endDate = toISODate(addWorkingDays(currentEnd, deltaDays, holidays))
+    const shiftedStart = cloneDate(currentStart)
+    shiftedStart.setDate(shiftedStart.getDate() + deltaDays)
+    const shiftedEnd = cloneDate(currentEnd)
+    shiftedEnd.setDate(shiftedEnd.getDate() + deltaDays)
+    current.startDate = toISODate(snapToWorkingDay(shiftedStart, holidays))
+    current.endDate = toISODate(snapToWorkingDay(shiftedEnd, holidays))
     stageMap.set(stageTemplate.id, current)
   }
 
@@ -406,17 +447,19 @@ export function applyScheduleDrag(
      * 条件目的：根据拖拽动作更新起止时间。
      */
     if (payload.action === 'move') {
-      target.startDate = toISODate(
-        snapToWorkingDay(addWorkingDays(start, payload.deltaDays, holidays), holidays),
-      )
-      target.endDate = toISODate(
-        snapToWorkingDay(addWorkingDays(end, payload.deltaDays, holidays), holidays),
-      )
+      const snapDir = payload.deltaDays >= 0 ? 'forward' : 'backward'
+      const shiftedStart = cloneDate(start)
+      shiftedStart.setDate(shiftedStart.getDate() + payload.deltaDays)
+      const newStart = snapToWorkingDay(shiftedStart, holidays, snapDir)
+      const duration = countWorkingDays(start, end, holidays) - 1
+      const newEnd = addWorkingDays(newStart, duration, holidays)
+      target.startDate = toISODate(newStart)
+      target.endDate = toISODate(newEnd)
     } else if (payload.action === 'resize_start') {
-      const nextStart = snapToWorkingDay(
-        addWorkingDays(start, payload.deltaDays, holidays),
-        holidays,
-      )
+      const snapDir = payload.deltaDays >= 0 ? 'forward' : 'backward'
+      const shiftedStart = cloneDate(start)
+      shiftedStart.setDate(shiftedStart.getDate() + payload.deltaDays)
+      const nextStart = snapToWorkingDay(shiftedStart, holidays, snapDir)
       /**
        * 条件目的：防止开始日期晚于结束日期导致非法区间。
        */
@@ -424,7 +467,10 @@ export function applyScheduleDrag(
         target.startDate = toISODate(nextStart)
       }
     } else if (payload.action === 'resize_end') {
-      const nextEnd = snapToWorkingDay(addWorkingDays(end, payload.deltaDays, holidays), holidays)
+      const snapDir = payload.deltaDays >= 0 ? 'forward' : 'backward'
+      const shiftedEnd = cloneDate(end)
+      shiftedEnd.setDate(shiftedEnd.getDate() + payload.deltaDays)
+      const nextEnd = snapToWorkingDay(shiftedEnd, holidays, snapDir)
       /**
        * 条件目的：防止结束日期早于开始日期导致非法区间。
        */

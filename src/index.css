@@ -589,6 +589,23 @@ select {
   margin-bottom: 4px;
 }
 
+/* 筛选行 + 批量操作栏 */
+.slib-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  min-height: 32px;
+}
+
+.slib-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* 环节库颜色列色块按钮 */
 .slib-color-swatch {
   display: inline-flex;
@@ -943,6 +960,15 @@ select {
 .timeline-left {
   border-right: 1px solid var(--color-border);
   background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.timeline-left-body {
+  flex: 1 1 0;
+  overflow-y: hidden;
+  overflow-x: hidden;
 }
 
 .timeline-resizer {

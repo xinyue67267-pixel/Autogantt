@@ -257,6 +257,7 @@ export function SettingsPage(): JSX.Element {
     upsertStageLibraryItem,
     removeStageLibraryItem,
     importStageLibraryItems,
+    batchUpdateStageLibraryItems,
     setTheme,
   } = useAppStateContext()
   const toast = useToast()
@@ -388,6 +389,26 @@ export function SettingsPage(): JSX.Element {
   /** 色板 popover 打开的条目 ID（null 表示关闭） */
   const [colorPopoverId, setColorPopoverId] = useState<string | null>(null)
 
+  /** 环节库管线筛选（空字符串=全部） */
+  const [slibFilterPipeline, setSlibFilterPipeline] = useState('')
+  /** 环节库已选条目 ID 集合（批量操作） */
+  const [selectedSlibIds, setSelectedSlibIds] = useState<Set<string>>(new Set())
+  /** 批量改管线 popover 是否展开 */
+  const [batchPipelinePopover, setBatchPipelinePopover] = useState(false)
+  /** 批量改颜色 popover 是否展开 */
+  const [batchColorPopover, setBatchColorPopover] = useState(false)
+  /** 批量删除确认弹窗 */
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false)
+
+  /** 当前筛选后的环节库列表 */
+  const filteredSlib = useMemo(
+    () =>
+      slibFilterPipeline
+        ? state.stageLibrary.filter((item) => item.pipelineId === slibFilterPipeline)
+        : state.stageLibrary,
+    [state.stageLibrary, slibFilterPipeline],
+  )
+
   /**
    * 新增环节库条目。
    *
@@ -466,18 +487,73 @@ export function SettingsPage(): JSX.Element {
     setColorPopoverId(null)
   }
 
+  /** 全选/全取消当前筛选结果 */
+  const handleSelectAll = (checked: boolean): void => {
+    if (checked) {
+      setSelectedSlibIds(new Set(filteredSlib.map((item) => item.id)))
+    } else {
+      setSelectedSlibIds(new Set())
+    }
+  }
+
+  /** 切换单条选中状态 */
+  const handleToggleSelect = (id: string): void => {
+    setSelectedSlibIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /** 批量删除确认 */
+  const handleBatchDelete = (): void => {
+    batchUpdateStageLibraryItems(Array.from(selectedSlibIds), () => null, state.paradigms)
+    setSelectedSlibIds(new Set())
+    setBatchDeleteConfirm(false)
+    toast.success('批量删除完成')
+  }
+
+  /** 批量修改所属管线 */
+  const handleBatchSetPipeline = (pipelineId: string): void => {
+    batchUpdateStageLibraryItems(
+      Array.from(selectedSlibIds),
+      (item) => ({ ...item, pipelineId: pipelineId || undefined }),
+      state.paradigms,
+    )
+    setSelectedSlibIds(new Set())
+    setBatchPipelinePopover(false)
+    toast.success('批量修改管线完成')
+  }
+
+  /** 批量修改颜色 */
+  const handleBatchSetColor = (color: string | undefined): void => {
+    batchUpdateStageLibraryItems(
+      Array.from(selectedSlibIds),
+      (item) => ({ ...item, color }),
+      state.paradigms,
+    )
+    setSelectedSlibIds(new Set())
+    setBatchColorPopover(false)
+    toast.success('批量修改颜色完成')
+  }
+
   /**
    * 下载环节库导入模板（三列：环节名称、所属类别、颜色）。
    *
    * @returns {void}
    */
   const handleDownloadSlibTemplate = (): void => {
+    const pipelineNames = state.pipelines.map((p) => p.name)
     const rows = [
-      ['环节名称', '所属类别', '颜色（可选，如 #C4B5FD）'],
-      ['需求设计', '设计', '#C4B5FD'],
-      ['开发实现', '开发', '#A78BFA'],
+      ['环节名称', '所属类别', '所属管线（可选）', '颜色（可选，如 #C4B5FD）'],
+      ['需求设计', '设计', pipelineNames[0] ?? '', '#C4B5FD'],
+      ['开发实现', '开发', '', '#A78BFA'],
     ]
-    const blob = buildXlsxBlob(rows, [])
+    const dropdowns = [
+      ...(pipelineNames.length > 0 ? [{ sqref: 'C2:C10000', options: pipelineNames }] : []),
+    ]
+    const blob = buildXlsxBlob(rows, dropdowns)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -488,7 +564,7 @@ export function SettingsPage(): JSX.Element {
 
   /**
    * 批量导入环节库 Excel。
-   * A列=环节名称，B列=所属类别，C列=颜色；名称为空跳过，名称已存在跳过。
+   * A列=环节名称，B列=所属类别，C列=所属管线，D列=颜色；名称为空跳过，名称已存在跳过。
    *
    * @param {ChangeEvent<HTMLInputElement>} event 文件选择事件
    * @returns {void}
@@ -513,7 +589,7 @@ export function SettingsPage(): JSX.Element {
       let skipped = 0
 
       /**
-       * 循环目的：逐行解析环节名称、类别与颜色，过滤无效行。
+       * 循环目的：逐行解析环节名称、类别、管线与颜色，过滤无效行。
        * 颜色优先级：用户填写 > 自动预设（按全局顺序 index % 16 循环取色）。
        */
       for (const row of dataRows) {
@@ -524,7 +600,11 @@ export function SettingsPage(): JSX.Element {
           continue
         }
         existingNames.add(name)
-        const rawColor = `${row['C'] ?? ''}`.trim()
+        const pipelineNameRaw = `${row['C'] ?? ''}`.trim()
+        const matchedPipeline = pipelineNameRaw
+          ? state.pipelines.find((p) => p.name === pipelineNameRaw)
+          : undefined
+        const rawColor = `${row['D'] ?? ''}`.trim()
         /**
          * 自动预设颜色：若用户未填写颜色列，则按当前已有条目总数（含本批次已处理条目）
          * 从色板中循环取色，确保批量导入后各环节颜色各异。
@@ -535,6 +615,7 @@ export function SettingsPage(): JSX.Element {
           id: createId('slib'),
           stageName: name,
           stageCategory: `${row['B'] ?? ''}`.trim(),
+          pipelineId: matchedPipeline?.id,
           color: rawColor || autoColor,
           deprecated: false,
         })
@@ -671,7 +752,7 @@ export function SettingsPage(): JSX.Element {
         {activeTab === 'stagelibrary' && (
           <div className="card">
             <h2>环节库</h2>
-            {/* 顶部操作栏 */}
+            {/* 顶部操作栏第一行 */}
             <div className="slib-toolbar">
               <div className="inline-form" style={{ flex: 1 }}>
                 <input
@@ -715,10 +796,162 @@ export function SettingsPage(): JSX.Element {
               </label>
             </div>
 
+            {/* 筛选行 + 批量操作栏 */}
+            <div className="slib-filter-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13, color: 'var(--color-muted)' }}>所属管线</span>
+                <select
+                  value={slibFilterPipeline}
+                  onChange={(e) => {
+                    setSlibFilterPipeline(e.target.value)
+                    setSelectedSlibIds(new Set())
+                  }}
+                  style={{ width: 160 }}
+                >
+                  <option value="">全部</option>
+                  {state.pipelines.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedSlibIds.size > 0 && (
+                <div className="slib-batch-bar">
+                  <span style={{ fontSize: 13, color: 'var(--color-muted)' }}>
+                    已选 {selectedSlibIds.size} 条
+                  </span>
+                  <button
+                    type="button"
+                    className="danger-btn"
+                    onClick={() => setBatchDeleteConfirm(true)}
+                  >
+                    批量删除
+                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => {
+                        setBatchPipelinePopover((v) => !v)
+                        setBatchColorPopover(false)
+                      }}
+                    >
+                      修改管线
+                    </button>
+                    {batchPipelinePopover && (
+                      <div className="slib-color-popover" style={{ minWidth: 140 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            style={{ textAlign: 'left', fontSize: 12 }}
+                            onClick={() => handleBatchSetPipeline('')}
+                          >
+                            通用/不限
+                          </button>
+                          {state.pipelines.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="ghost-btn"
+                              style={{ textAlign: 'left', fontSize: 12 }}
+                              onClick={() => handleBatchSetPipeline(p.id)}
+                            >
+                              {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => {
+                        setBatchColorPopover((v) => !v)
+                        setBatchPipelinePopover(false)
+                      }}
+                    >
+                      修改颜色
+                    </button>
+                    {batchColorPopover && (
+                      <div className="slib-color-popover">
+                        <div className="color-picker-wrap">
+                          {PRESET_COLORS.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              className="color-swatch"
+                              style={{ background: color }}
+                              aria-label={`批量设置颜色 ${color}`}
+                              onClick={() => handleBatchSetColor(color)}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          style={{ marginTop: 4, width: '100%', fontSize: 12 }}
+                          onClick={() => handleBatchSetColor(undefined)}
+                        >
+                          清除
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() => setSelectedSlibIds(new Set())}
+                  >
+                    取消选择
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 批量删除确认弹窗 */}
+            {batchDeleteConfirm && (
+              <div className="confirm-overlay">
+                <div className="confirm-dialog">
+                  <p>
+                    确认删除选中的 {selectedSlibIds.size}{' '}
+                    条环节？被范式引用的条目将标记为停用，其余直接删除。
+                  </p>
+                  <div className="row-gap" style={{ justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => setBatchDeleteConfirm(false)}
+                    >
+                      取消
+                    </button>
+                    <button type="button" className="danger-btn" onClick={handleBatchDelete}>
+                      确认删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 环节库表格 */}
             <table className="data-table" style={{ marginTop: 12 }}>
               <thead>
                 <tr>
+                  <th style={{ width: 32 }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredSlib.length > 0 &&
+                        filteredSlib.every((item) => selectedSlibIds.has(item.id))
+                      }
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      aria-label="全选"
+                    />
+                  </th>
                   <th>环节名称</th>
                   <th>所属类别</th>
                   <th>所属管线</th>
@@ -727,17 +960,24 @@ export function SettingsPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {state.stageLibrary.length === 0 && (
+                {filteredSlib.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
+                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-muted)' }}>
                       暂无环节，请点击上方新增或批量导入。
                     </td>
                   </tr>
                 )}
-                {state.stageLibrary.map((item) => {
+                {filteredSlib.map((item) => {
                   if (editingSlibId === item.id) {
                     return (
                       <tr key={item.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedSlibIds.has(item.id)}
+                            onChange={() => handleToggleSelect(item.id)}
+                          />
+                        </td>
                         <td>
                           <input
                             value={editSlibName}
@@ -814,7 +1054,30 @@ export function SettingsPage(): JSX.Element {
                   }
                   return (
                     <tr key={item.id}>
-                      <td>{item.stageName}</td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedSlibIds.has(item.id)}
+                          onChange={() => handleToggleSelect(item.id)}
+                        />
+                      </td>
+                      <td>
+                        {item.stageName}
+                        {item.deprecated && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 11,
+                              color: 'var(--color-muted)',
+                              background: 'var(--color-bg-secondary, #f3f4f6)',
+                              borderRadius: 4,
+                              padding: '1px 5px',
+                            }}
+                          >
+                            停用
+                          </span>
+                        )}
+                      </td>
                       <td>
                         {item.stageCategory || (
                           <span style={{ color: 'var(--color-muted)' }}>—</span>

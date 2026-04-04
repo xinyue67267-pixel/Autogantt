@@ -44,6 +44,8 @@ function loadState(): AppState {
       ...parsed,
       pipelines: DEFAULT_APP_STATE.pipelines,
       holidays: DEFAULT_APP_STATE.holidays,
+      stageLibrary: DEFAULT_APP_STATE.stageLibrary,
+      paradigms: parsed.paradigms?.length ? parsed.paradigms : DEFAULT_APP_STATE.paradigms,
     }
   } catch {
     return DEFAULT_APP_STATE
@@ -84,6 +86,7 @@ function persistState(nextState: AppState): void {
  *  upsertStageLibraryItem: (value: StageLibraryItem) => void
  *  removeStageLibraryItem: (id: string) => void
  *  importStageLibraryItems: (values: StageLibraryItem[]) => void
+ *  batchUpdateStageLibraryItems: (ids: string[], updater: (item: StageLibraryItem) => StageLibraryItem | null, paradigms: ParadigmTemplate[]) => void
  * }} 状态对象与操作函数
  */
 export function useAppState() {
@@ -294,6 +297,48 @@ export function useAppState() {
           const toAdd = values.filter((item) => !existingNames.has(item.stageName))
           if (toAdd.length === 0) return prev
           return { ...prev, stageLibrary: [...prev.stageLibrary, ...toAdd] }
+        })
+      },
+      /**
+       * 批量更新环节库条目（按 id 匹配，仅更新传入的 ids 对应条目）。
+       * 用于批量改管线、批量改颜色、批量删除（删除=过滤移除或标记停用）。
+       *
+       * @param {string[]} ids 目标条目 ID 列表
+       * @param {(item: StageLibraryItem) => StageLibraryItem | null} updater 返回 null 表示删除该条目
+       * @param {ParadigmTemplate[]} paradigms 用于判断是否被引用（批量删除时使用）
+       * @returns {void}
+       */
+      batchUpdateStageLibraryItems: (
+        ids: string[],
+        updater: (item: StageLibraryItem) => StageLibraryItem | null,
+        paradigms: ParadigmTemplate[],
+      ): void => {
+        commit((prev) => {
+          const idSet = new Set(ids)
+          /**
+           * 循环目的：对每条条目判断是否在目标集合内；在集合内则经过 updater 变换，
+           * updater 返回 null 时进一步判断引用情况（已被引用→标记停用，否则移除）。
+           */
+          const referenced = new Set(
+            paradigms.flatMap((p) => p.stageTemplates.map((s) => s.stageName)),
+          )
+          const next: StageLibraryItem[] = []
+          for (const item of prev.stageLibrary) {
+            if (!idSet.has(item.id)) {
+              next.push(item)
+              continue
+            }
+            const result = updater(item)
+            if (result === null) {
+              if (referenced.has(item.stageName)) {
+                next.push({ ...item, deprecated: true })
+              }
+              // else: drop (hard delete)
+            } else {
+              next.push(result)
+            }
+          }
+          return { ...prev, stageLibrary: next }
         })
       },
       /**

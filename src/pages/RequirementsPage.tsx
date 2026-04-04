@@ -12,7 +12,8 @@ import { useConfirm } from '../context/ConfirmContext'
 import { useToast } from '../context/ToastContext'
 import type { Requirement } from '../types'
 import { createId } from '../utils/id'
-import { buildXlsxBlob } from '../utils/xlsxBuilder'
+import { buildRequirementScheduleXlsxBlob, buildXlsxBlob } from '../utils/xlsxBuilder'
+import { countWorkingDays } from '../utils/date'
 import { generateSchedules } from '../utils/schedule'
 
 /** Excel 导入时每行的校验错误信息 */
@@ -225,6 +226,22 @@ export function RequirementsPage(): JSX.Element {
     const a = document.createElement('a')
     a.href = url
     a.download = '需求导入模板.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /**
+   * 导出当前筛选需求的排期明细为 xlsx 文件。
+   *
+   * @returns {void}
+   */
+  const handleExportSchedule = (): void => {
+    const blob = buildRequirementScheduleXlsxBlob(filteredRows, allSchedules)
+    const today = new Date().toISOString().slice(0, 10)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `需求排期_${today}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -622,6 +639,9 @@ export function RequirementsPage(): JSX.Element {
             ↑ 批量导入Excel
             <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} />
           </label>
+          <button className="ghost-btn" type="button" onClick={handleExportSchedule}>
+            ↓ 导出 Excel
+          </button>
         </div>
 
         {/* 中部：筛选区（可独立滚动） */}
@@ -1019,6 +1039,7 @@ export function RequirementsPage(): JSX.Element {
                       <th>开始日期</th>
                       <th>结束日期</th>
                       <th>工期</th>
+                      <th>人天</th>
                       <th>里程碑</th>
                     </tr>
                   </thead>
@@ -1033,6 +1054,18 @@ export function RequirementsPage(): JSX.Element {
                       const end = new Date(stage.endDate)
                       const durationDays =
                         Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      const template = state.paradigms.find((p) => p.id === drawerReq.templateId)
+                      const stageTemplate = template?.stageTemplates.find(
+                        (s) => s.id === stage.stageId,
+                      )
+                      const personDays = stageTemplate
+                        ? Math.max(
+                            1,
+                            Math.ceil(
+                              stageTemplate.referencePersonDays * Math.max(1, drawerReq.quantity),
+                            ),
+                          )
+                        : countWorkingDays(start, end, state.holidays)
                       return (
                         <tr key={stage.stageId}>
                           <td>
@@ -1042,6 +1075,7 @@ export function RequirementsPage(): JSX.Element {
                           <td>{stage.startDate}</td>
                           <td>{stage.endDate}</td>
                           <td>{durationDays}天</td>
+                          <td>{personDays}人天</td>
                           <td>
                             {stage.isMilestone && (
                               <span className="tree-badge">{stage.isMilestone}</span>

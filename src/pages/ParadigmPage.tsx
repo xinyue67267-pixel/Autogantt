@@ -283,6 +283,7 @@ export function ParadigmPage(): JSX.Element {
    * @returns {void}
    */
   const handleDownloadParadigmTemplate = (): void => {
+    const pipelineNames = state.pipelines.map((p) => p.name)
     const rows = [
       [
         '范式名称',
@@ -294,9 +295,32 @@ export function ParadigmPage(): JSX.Element {
         '触发方式',
         '里程碑节点',
         '模板分类',
+        '所属管线',
       ],
-      ['通用生产项目范式', '需求设计', 3, '', '', 'FS', 'finish_100', '', '通用'],
-      ['通用生产项目范式', '开发实现', 5, '需求设计', '', 'FS', 'finish_100', 'L1', '通用'],
+      [
+        '通用生产项目范式',
+        '需求设计',
+        3,
+        '',
+        '',
+        'FS',
+        'finish_100',
+        '',
+        '通用',
+        pipelineNames[0] ?? '',
+      ],
+      [
+        '通用生产项目范式',
+        '开发实现',
+        5,
+        '需求设计',
+        '',
+        'FS',
+        'finish_100',
+        'L1',
+        '通用',
+        pipelineNames[0] ?? '',
+      ],
     ]
     const activeSlibNames = state.stageLibrary
       .filter((item) => !item.deprecated)
@@ -313,6 +337,7 @@ export function ParadigmPage(): JSX.Element {
         sqref: 'I2:I10000',
         options: state.categories.length > 0 ? state.categories : ['通用'],
       },
+      ...(pipelineNames.length > 0 ? [{ sqref: 'J2:J10000', options: pipelineNames }] : []),
     ]
     const blob = buildXlsxBlob(rows, dropdowns)
     const url = URL.createObjectURL(blob)
@@ -499,10 +524,17 @@ export function ParadigmPage(): JSX.Element {
         const firstRow = groupRows[0].row
         const categoryId = (`${firstRow['I'] ?? ''}`.trim() || state.categories[0]) ?? '通用'
 
+        /* ── J列：所属管线（用第一行的值，按名称匹配） ── */
+        const pipelineNameRaw = `${firstRow['J'] ?? ''}`.trim()
+        const matchedPipeline = pipelineNameRaw
+          ? state.pipelines.find((p) => p.name === pipelineNameRaw)
+          : undefined
+
         imported.push({
           id: createId('tpl'),
           templateName: paradigmName,
           categoryId,
+          pipelineId: matchedPipeline?.id,
           stageTemplates: stageList,
         })
       }

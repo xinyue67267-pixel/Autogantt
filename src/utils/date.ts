@@ -200,3 +200,24 @@ export function diffDays(dateA: Date, dateB: Date): number {
   const dayMs = 24 * 60 * 60 * 1000
   return Math.round((dateB.getTime() - dateA.getTime()) / dayMs)
 }
+
+/**
+ * 计算两个日期之间的工作日天数（含边界，dateB - dateA，可为负数）。
+ *
+ * @param {Date} dateA 起始日期
+ * @param {Date} dateB 结束日期
+ * @param {HolidayRange[]} holidays 工作日历
+ * @returns {number} 工作日天数差（dateB 在 dateA 之后为正，之前为负）
+ */
+export function countWorkingDays(dateA: Date, dateB: Date, holidays: HolidayRange[]): number {
+  const forward = dateB >= dateA
+  const start = cloneDate(forward ? dateA : dateB)
+  const end = cloneDate(forward ? dateB : dateA)
+  let count = 0
+  const current = cloneDate(start)
+  while (current <= end) {
+    if (isWorkingDay(current, holidays)) count++
+    current.setDate(current.getDate() + 1)
+  }
+  return forward ? count : -count
+}
