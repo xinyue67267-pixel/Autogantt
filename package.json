@@ -1,6 +1,6 @@
 {
   "name": "autogantt",
-  "version": "1.33.1",
+  "version": "1.33.2",
   "private": true,
   "type": "module",
   "main": "electron-main.js",

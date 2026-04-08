@@ -24,14 +24,15 @@ import {
 } from './date'
 
 /**
- * 将环节持续时长从“人天”映射为“工作日”。
+ * 将环节持续时长从”人天”映射为”工作日”。
+ * 工期固定为模板参考人天，不随需求数量（quantity）缩放——
+ * quantity 仅影响人天汇总展示，不改变排期工期。
  *
  * @param {StageTemplate} stage 环节模板
- * @param {number} quantity 需求数量
  * @returns {number} 工作日时长，最小1天
  */
-function getStageDuration(stage: StageTemplate, quantity: number): number {
-  return Math.max(1, Math.ceil(stage.referencePersonDays * Math.max(1, quantity)))
+function getStageDuration(stage: StageTemplate): number {
+  return Math.max(1, Math.ceil(stage.referencePersonDays))
 }
 
 /**
@@ -120,7 +121,7 @@ export function generateScheduleForRequirement(
      */
     for (let index = stages.length - 1; index >= 0; index -= 1) {
       const stage = stages[index]
-      const duration = getStageDuration(stage, requirement.quantity)
+      const duration = getStageDuration(stage)
       const endDate = cursor
       const startDate = addWorkingDays(endDate, -(duration - 1), holidays)
       generated.unshift({
@@ -141,7 +142,7 @@ export function generateScheduleForRequirement(
      * 循环目的：正推模式从起始日期开始顺序铺排每个环节。
      */
     for (const stage of stages) {
-      const duration = getStageDuration(stage, requirement.quantity)
+      const duration = getStageDuration(stage)
       const startDate = cursor
       const endDate = addWorkingDays(startDate, duration - 1, holidays)
       generated.push({
